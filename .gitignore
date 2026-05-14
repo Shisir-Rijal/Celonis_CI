@@ -1,0 +1,69 @@
+# ===== Project-specific =====
+.claude/
+CLAUDE.md
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+*.egg-info/
+build/
+dist/
+
+# ===== Node / Next.js =====
+node_modules/
+.next/
+out/
+build/
+dist/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== Environment files =====
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+# Do NOT ignore the example template
+!.env.example
+
+# ===== IDE / editor =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Vercel =====
+.vercel
+
+# ===== TypeScript =====
+*.tsbuildinfo
