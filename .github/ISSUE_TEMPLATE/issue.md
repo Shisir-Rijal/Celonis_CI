@@ -7,14 +7,6 @@ assignees: ''
 
 ---
 
----
-name: Standard Issue
-about: Use this template for all feature, infrastructure, and refactoring issues
-title: 'type: short descriptive title'
-labels: ''
-assignees: ''
----
-
 ## Context
 
 One paragraph: what part of the project this is about, why it matters, how it
