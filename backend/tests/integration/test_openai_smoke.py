@@ -10,7 +10,7 @@ Run manually with:
 import os
 import pytest
 
-from app.llm.openai_client import OpenAIClient, OpenAISettings
+from app.llm.openai_client import OpenAIClient
 
 
 # Skip the entire module if no API key is present.
@@ -22,8 +22,8 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def client() -> OpenAIClient:
-    """Real OpenAIClient reading from environment variables."""
-    return OpenAIClient(settings=OpenAISettings())
+    """Real OpenAIClient reading from global Settings (which loads .env)."""
+    return OpenAIClient()
 
 
 @pytest.mark.integration

@@ -58,3 +58,21 @@ class ChatResponse(BaseModel):
 
     answer: str
     sources: list[Source] = []
+
+
+# ---------------------------------------------------------------------------
+# Auth API models
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    """Incoming body for POST /auth/login."""
+
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """Response body for POST /auth/login on success."""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int = 86400  # 24h in seconds

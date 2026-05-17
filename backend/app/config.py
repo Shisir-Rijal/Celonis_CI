@@ -15,7 +15,7 @@ Usage:
 from functools import lru_cache
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,6 +53,31 @@ class Settings(BaseSettings):
 
     # --- Backend ---
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+
+    # --- Auth ---
+    APP_PASSWORD: str
+    JWT_SECRET: str
+
+    @model_validator(mode="after")
+    def validate_auth_fields(self) -> "Settings":
+        """Reject weak auth credentials on startup.
+
+        JWT_SECRET under 32 chars is brute-forceable.
+        APP_PASSWORD under 12 chars is trivially guessable — the login
+        endpoint has no rate limiting at this stage, so a short password
+        is a real attack surface.
+        """
+        if len(self.JWT_SECRET) < 32:
+            raise ValueError(
+                "JWT_SECRET must be at least 32 characters. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+        if len(self.APP_PASSWORD) < 12:
+            raise ValueError(
+                "APP_PASSWORD must be at least 12 characters. "
+                "The login endpoint has no rate limiting — a short password is a real risk."
+            )
+        return self
 
     @field_validator("OPENAI_BASE_URL", mode="before")
     @classmethod
