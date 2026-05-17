@@ -15,53 +15,15 @@ Usage:
 
 import structlog
 from functools import lru_cache
-from typing import Any
 
 from openai import AsyncOpenAI
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.config import Settings, get_settings
 from app.exceptions import EmbeddingError, LLMProviderError
 from app.llm.base import ChatClient, EmbeddingClient
 from app.llm.retry import with_retry
 
 logger = structlog.get_logger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Settings
-# ---------------------------------------------------------------------------
-
-class OpenAISettings(BaseSettings):
-    """Settings consumed by OpenAIClient.
-
-    All values come from environment variables. When app/config.py is built
-    (Issue #6), the global Settings object will be passed in directly instead
-    of instantiating this class separately.
-    """
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    OPENAI_API_KEY: str
-    OPENAI_BASE_URL: str | None = None
-
-    @field_validator("OPENAI_BASE_URL", mode="before")
-    @classmethod
-    def normalise_base_url(cls, v: Any) -> str | None:
-        """Convert empty strings and whitespace-only values to None.
-
-        .env files with inline comments (e.g. 'OPENAI_BASE_URL=  # optional')
-        can produce whitespace strings instead of None. AsyncOpenAI rejects
-        those as invalid URLs.
-        """
-        if v is None:
-            return None
-        stripped = str(v).strip()
-        return stripped if stripped else None
-    OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
-    OPENAI_TEMPERATURE: float = 0.0
-    OPENAI_TIMEOUT: int = 60
 
 
 # ---------------------------------------------------------------------------
@@ -76,12 +38,14 @@ class OpenAIClient(ChatClient, EmbeddingClient):
     transparently.
 
     Args:
-        settings: An OpenAISettings instance. Defaults to reading from
-            environment variables when not provided explicitly.
+        settings: The global Settings instance. Defaults to
+            ``get_settings()`` when not provided explicitly, which is the
+            correct behaviour in production. Pass a custom Settings object
+            in tests to avoid loading ``.env``.
     """
 
-    def __init__(self, settings: OpenAISettings | None = None) -> None:
-        self._settings = settings or OpenAISettings()
+    def __init__(self, settings: Settings | None = None) -> None:
+        self._settings = settings or get_settings()
         self._client = AsyncOpenAI(
             api_key=self._settings.OPENAI_API_KEY,
             base_url=self._settings.OPENAI_BASE_URL or "https://api.openai.com/v1",

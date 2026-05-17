@@ -1,22 +1,73 @@
+"""FastAPI application entry point.
+
+Registers routers, middleware, and startup hooks. All route logic lives
+in ``app/api/``. This file stays thin — its only job is wiring.
+"""
+
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Celonis CI Backend", version="0.1.0")
+from app.api import chat, health, workflows
+from app.config import get_settings
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+logger = structlog.get_logger(__name__)
 
 
-@app.get("/")
-async def root() -> dict[str, str]:
-    return {"status": "ok", "service": "celonis-ci-backend"}
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Configure logging on startup. FastAPI lifespan replaces on_event."""
+    settings = get_settings()
+    structlog.configure(
+        processors=[
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.add_log_level,
+            structlog.dev.ConsoleRenderer(),
+        ],
+    )
+    logger.info("backend_started", cors_origins=settings.BACKEND_CORS_ORIGINS)
+    yield
 
 
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "healthy"}
+def create_app() -> FastAPI:
+    """Build and configure the FastAPI application.
+
+    Separated from module-level instantiation so tests can call
+    ``create_app()`` independently without importing side effects.
+    """
+    settings = get_settings()
+
+    app = FastAPI(
+        title="Celonis CI Backend",
+        version="0.1.0",
+        description="Multi-agent competitive intelligence platform.",
+        lifespan=lifespan,
+    )
+
+    # --- Middleware ---
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.BACKEND_CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # --- Routers ---
+    app.include_router(health.router)
+    app.include_router(chat.router)
+    app.include_router(workflows.router)
+
+    # --- Root info endpoint ---
+    @app.get("/", tags=["meta"])
+    async def root() -> dict[str, str]:
+        """Return service identity. Used for quick sanity checks."""
+        return {"status": "ok", "service": "celonis-ci-backend"}
+
+    return app
+
+
+app = create_app()

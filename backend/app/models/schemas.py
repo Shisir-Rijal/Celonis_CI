@@ -26,3 +26,35 @@ class Chunk(BaseModel):
     created_at: datetime | None
 
 
+# ---------------------------------------------------------------------------
+# Chat API models
+# ---------------------------------------------------------------------------
+
+class Source(BaseModel):
+    """A source reference returned alongside a chat answer.
+
+    Carries enough information for the frontend to display a citation and
+    link back to the original document.
+    """
+
+    url: str
+    title: str | None = None
+    relevance_score: float
+
+
+class ChatRequest(BaseModel):
+    """Incoming body for POST /chat."""
+
+    query: str
+
+
+class ChatResponse(BaseModel):
+    """Response body for POST /chat.
+
+    In the stub phase `answer` is a fixed string and `sources` is empty.
+    Once the orchestrator is wired up (Issue #11), both will be populated
+    from the real workflow output.
+    """
+
+    answer: str
+    sources: list[Source] = []
