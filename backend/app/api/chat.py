@@ -6,8 +6,9 @@ before orchestrator logic lands.
 """
 
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.auth.dependencies import require_auth
 from app.models.schemas import ChatRequest, ChatResponse
 
 logger = structlog.get_logger(__name__)
@@ -15,7 +16,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse, dependencies=[Depends(require_auth)])
 async def chat(request: ChatRequest) -> ChatResponse:
     """Accept a user query and return a response.
 
