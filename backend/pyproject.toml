@@ -38,3 +38,7 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests that call real external APIs (skipped by default)",
+]
