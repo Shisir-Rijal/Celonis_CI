@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { poppins } from "@/lib/fonts";
 import "./globals.css";
+import NavBar from "../../components/ui/Navbar";
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -17,7 +18,9 @@ export default function RootLayout({
       lang="en"
       className={`${poppins.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <NavBar/>
+        {children}</body>
     </html>
   );
 }
