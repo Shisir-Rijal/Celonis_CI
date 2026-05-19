@@ -38,7 +38,7 @@ export default function Button({
       disabled={disabled}
       className={twMerge(
         clsx(
-          "inline-flex items-center justify-center rounded font-sans transition-opacity cursor-pointer",
+          "inline-flex items-center justify-center rounded font-sans transition-opacity cursor-pointer w-fit",
           variantStyles[variant],
           sizeStyles[size],
           disabled && "opacity-40 cursor-not-allowed pointer-events-none"

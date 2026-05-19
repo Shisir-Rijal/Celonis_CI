@@ -12,7 +12,7 @@ export default function Footer() {
         )}
     >
         <h3 className="text-primary-white">Copyright {new Date().getFullYear()} ©</h3>
-        <p className="text-neutral-grey-10">Celonis x MucDai</p>
+        <p className="text-neutral-grey-20">Celonis x MucDai</p>
     </section>
   );
 }
