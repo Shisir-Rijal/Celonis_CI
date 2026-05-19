@@ -42,41 +42,42 @@
 /* ============================================================
    Base resets
    ============================================================ */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+  }
 
-html {
-  scroll-behavior: smooth;
-  -webkit-text-size-adjust: 100%;
-}
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
 
-body {
-  background: var(--white);
-  color: var(--black);
-  font-family: var(--font-poppins), Arial, sans-serif;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
+  body {
+    background: var(--white);
+    color: var(--black);
+    font-family: var(--font-poppins), Arial, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
 
-img,
-video,
-svg {
-  display: block;
-  max-width: 100%;
-}
+  img,
+  video,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
 
-input,
-button,
-textarea,
-select {
-  font: inherit;
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+  }
 }
 
 /* ============================================================
@@ -102,7 +103,7 @@ select {
   }
 
   h4 {
-    font-size: 1.25rem;   /* 20px */
+    font-size: .875rem;   /* 20px */
     font-weight: 400;
     line-height: 1.4;
   }
