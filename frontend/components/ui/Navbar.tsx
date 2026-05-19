@@ -12,7 +12,7 @@ export default function NavBar() {
   return (
     <>
       {/* Desktop sidebar — visible on lg+ */}
-      <nav className="hidden lg:flex flex-col bg-primary-black text-primary-white h-screen w-36 shrink-0 px-6 py-6">
+      <nav className="hidden lg:flex flex-col bg-primary-black text-primary-white h-screen w-36 px-6 py-6 fixed left-0 top-0 z-20">
         <div className="mb-8 w-full">
           <Image
             src="/celonis_logo.png"

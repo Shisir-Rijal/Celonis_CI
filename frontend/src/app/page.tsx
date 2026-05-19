@@ -1,13 +1,20 @@
 import Image from "next/image";
 import Button from "../../components/ui/Button";
+import SectionWrapper from "../../components/ui/SectionWrapper";
 
 export default function Home() {
   return (
       <main className="flex flex-col gap-[inherit]">
         <h1 className="text-neutral-grey-10">Competitor Dashbaord</h1>
         <h3 className="text-primary-black">Test paragraph</h3>
-        <Button children="Test"
-        />
+        
+        <SectionWrapper
+          heading="Test heading">
+            <Button>
+              <h4>Test</h4>
+            </Button>
+          </SectionWrapper>
+
         <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
           <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
             To get started, edit the page.tsx file.

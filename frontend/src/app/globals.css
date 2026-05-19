@@ -58,7 +58,7 @@
   body {
     background: var(--white);
     color: var(--black);
-    font-family: var(--font-poppins), Arial, sans-serif;
+    font-family: var(--font-poppins), sans-serif;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -109,7 +109,7 @@
   }
 
   p {
-    font-size: 1rem;      /* 16px */
+    font-size: .875rem;      /* 16px */
     font-weight: 400;
     line-height: 1.6;
   }
