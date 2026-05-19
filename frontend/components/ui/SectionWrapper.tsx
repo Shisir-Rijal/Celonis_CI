@@ -1,7 +1,7 @@
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-type SectionProps = {
+type SectionWrapperProps = {
   variant?: "white" | "grey";
   size?: "full" | "half" | "drittel" | "zweidrittel";
   children: React.ReactNode;
@@ -20,17 +20,17 @@ const sizeStyles = {
   zweidrittel: "w-2/3",
 };
 
-export default function SectionDashboard({
+export default function SectionWrapper({
   variant = "white",
   size = "full",
   children,
   heading,
-}: SectionProps) {
+}: SectionWrapperProps) {
   return (
     <section
       className={twMerge(
         clsx(
-          "flex flex-col gap-4 rounded p-6",
+          "flex-1 flex-col gap-4 rounded py-6",
           sizeStyles[size],
           variantStyles[variant]
         )

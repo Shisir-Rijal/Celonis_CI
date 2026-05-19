@@ -19,7 +19,7 @@ export default function RootLayout({
       lang="en"
       className={`${poppins.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-row">
+      <body className="min-h-screen">
         <NavBar/>
         <PageWrapper
           children={children}
