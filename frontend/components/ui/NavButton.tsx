@@ -32,7 +32,7 @@ export default function NavButton({
           "flex items-center gap-8 w-full px-2 py-2 font-sans text-sm transition-colors cursor-pointer border-b",
           isActive
             ? "border-transparent text-secondary-green"
-            : "border-transparent text-neutral-grey-10 hover:border-primary-white"
+            : "border-transparent text-neutral-grey-20 hover:border-neutral-grey-20"
         )
       )}
     >

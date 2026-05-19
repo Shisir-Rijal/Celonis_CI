@@ -8,9 +8,10 @@
   --black: #000000;
   --green: #5CFE50;
   --blue: #3233F5;
-  --grey-00: #CBCBCB;
-  --grey-10: #767676;
-  --grey-20: #1D1D1D;
+  --grey-00: #f5f5f5;
+  --grey-10: #CBCBCB;
+  --grey-20: #767676;
+  --grey-30: #1D1D1D;
 }
 
 /* ============================================================
@@ -29,6 +30,7 @@
   --color-neutral-grey-00: var(--grey-00);
   --color-neutral-grey-10: var(--grey-10);
   --color-neutral-grey-20: var(--grey-20);
+  --color-neutral-grey-30: var(--grey-30);
 
   /* Semantic */
   --color-success: #22c55e;
@@ -87,7 +89,7 @@
   h1 {
     font-size: 3.75rem;   /* 36px */
     font-weight: 400;
-    line-height: 1.2;
+    line-height: 1.8;
   }
 
   h2 {

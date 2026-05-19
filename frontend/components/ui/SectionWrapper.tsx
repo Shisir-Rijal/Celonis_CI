@@ -10,7 +10,7 @@ type SectionWrapperProps = {
 
 const variantStyles = {
   white: "bg-primary-white text-primary-black",
-  grey: "bg-neutral-grey-00 text-primary-black",
+  grey: "bg-neutral-grey-00 text-primary-black p-16",
 };
 
 const sizeStyles = {
@@ -30,7 +30,7 @@ export default function SectionWrapper({
     <section
       className={twMerge(
         clsx(
-          "flex-1 flex-col gap-4 rounded py-6",
+          "flex flex-col gap-4 rounded py-6",
           sizeStyles[size],
           variantStyles[variant]
         )

@@ -46,7 +46,7 @@ export default function NavBar() {
         <button
           type="button"
           onClick={() => setMenuOpen(true)}
-          className="text-neutral-grey-00 hover:text-primary-white transition-colors cursor-pointer"
+          className="text-neutral-grey-20 hover:text-primary-white transition-colors cursor-pointer"
           aria-label="Menü öffnen"
         >
           <Menu size={24} />

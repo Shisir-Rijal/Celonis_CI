@@ -35,7 +35,7 @@ export default function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
           <button
             type="button"
             onClick={onClose}
-            className="text-neutral-grey-00 hover:text-primary-white transition-colors cursor-pointer"
+            className="text-neutral-grey-10 hover:text-primary-white transition-colors cursor-pointer"
             aria-label="Menü schließen"
           >
             ✕
