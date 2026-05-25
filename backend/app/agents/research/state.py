@@ -82,7 +82,7 @@ class SeoGeoData(BaseData):
     geo: dict[str, Any] = {} 
 
 class NewsData(BaseData):
-    news: dict[dict[str, str]] = {}
+    news: list[dict[str, str]] = {}
 
 class Additionals(BaseData):
     description: str | None # .company_profile Finnhub
