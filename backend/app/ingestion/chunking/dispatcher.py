@@ -24,6 +24,7 @@ async def chunk(
     metadata: ChunkMetadata,
     client: ChatClient | None = None,
 ) -> list[Chunk]:
+    """Route text to the appropriate chunking strategy based on source_type."""
     source_type = metadata.source_type
 
     if source_type in _NONE_ENRICHED_TYPES:
@@ -32,7 +33,7 @@ async def chunk(
     if source_type in _AGENTIC_TYPES:
         if client is None:
             raise ChunkingError(
-                f"source_type '{source_type}' requires agentic chunking but no ChatClient was provided."
+                f"source_type '{source_type}' requires agentic chunking but no Client was provided."
             )
         return await chunk_agentic(text, metadata, client)
 

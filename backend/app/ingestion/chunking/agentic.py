@@ -17,6 +17,11 @@ from app.exceptions import ChunkingError
 from app.llm.base import ChatClient
 # app/models/schemas.py —> shared data models
 from app.models.schemas import Chunk, ChunkMetadata
+# structural.py: used for fallback splitting when LLM returns an oversized section
+from app.ingestion.chunking.structural import _count_tokens, _split_by_tokens
+
+_MAX_TOKENS = 800   # fallback —> same default as structural
+_OVERLAP_TOKENS = 80
 
 _SYSTEM_PROMPT = """
 You are a document segmentation assistant. 
@@ -40,13 +45,14 @@ async def chunk_agentic(
     metadata: ChunkMetadata,
     client: ChatClient,
 ) -> list[Chunk]:
+    """Send text to LLM for semantic segmentation; return one Chunk per section."""
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": text},
     ]
 
     # response_format forces valid JSON output
-    response = await client.complete(messages, response_format={"type": "json_object"})  
+    response = await client.complete(messages, response_format={"type": "json_object"})
 
     try:
         sections = json.loads(response)["sections"]
@@ -55,15 +61,28 @@ async def chunk_agentic(
 
     now = datetime.now(timezone.utc)
     # model_copy(): Pydantic method —> clones metadata and overrides one field
-    chunk_meta = metadata.model_copy(update={"chunking_strategy": "agentic"})  
+    chunk_meta = metadata.model_copy(update={"chunking_strategy": "agentic"})
+
+    # Post-process: if the LLM returned an oversized section, split it with a token window.
+    # Only the first sub-chunk keeps the summary.
+    chunk_texts: list[str] = []
+    for section in sections:
+        content = section["content"]
+        summary = section["summary"]
+        if _count_tokens(content) > _MAX_TOKENS:
+            sub_chunks = _split_by_tokens(content, _MAX_TOKENS, _OVERLAP_TOKENS)
+            chunk_texts.append(f"{summary}\n\n{sub_chunks[0]}")
+            chunk_texts.extend(sub_chunks[1:])
+        else:
+            chunk_texts.append(f"{summary}\n\n{content}")
 
     return [
         Chunk(
             id=uuid.uuid4(),  # uuid4() generates a random unique ID (stdlib)
-            content=f"{section['summary']}\n\n{section['content']}",
+            content=chunk_text,
             metadata=chunk_meta,
             embedding=None,
             created_at=now,
         )
-        for section in sections
+        for chunk_text in chunk_texts
     ]

@@ -21,6 +21,7 @@ from app.models.schemas import Chunk, ChunkMetadata
 
 
 def chunk_none_enriched(text: str, metadata: ChunkMetadata) -> list[Chunk]:
+    """Return the full text as a single chunk with a context header prepended."""
     header_parts = [
         f"Company: {metadata.company}",
         f"Type: {metadata.source_type}",

@@ -28,6 +28,7 @@ DEFAULT_OVERLAP_TOKENS = 80
 
 
 def _count_tokens(text: str) -> int:
+    """Return the number of tokens in text using cl100k_base encoding."""
     return len(_ENCODING.encode(text))
 
 
@@ -78,6 +79,7 @@ def chunk_structural(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     overlap_tokens: int = DEFAULT_OVERLAP_TOKENS,
 ) -> list[Chunk]:
+    """Split Markdown text at headings, merge short sections, and cap long ones by token window."""
     sections = _split_at_headings(text)
     merged = _merge_short_sections(sections, min_tokens)
 
