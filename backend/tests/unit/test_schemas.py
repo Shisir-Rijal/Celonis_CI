@@ -85,12 +85,12 @@ class TestChunkMetadataValid:
 # ---------------------------------------------------------------------------
 
 class TestChunkMetadataEnumValidation:
-    @pytest.mark.parametrize("bad_value", ["public", "internal", "", "OWNED"])
+    @pytest.mark.parametrize("bad_value", ["public", "", "OWNED", "INTERNAL"])
     def test_invalid_source_origin_raises(self, bad_value):
         with pytest.raises(ValidationError):
             ChunkMetadata(**make_metadata(source_origin=bad_value))
 
-    @pytest.mark.parametrize("good_value", ["owned", "earned", "third_party"])
+    @pytest.mark.parametrize("good_value", ["owned", "earned", "third_party", "internal"])
     def test_valid_source_origin_accepted(self, good_value):
         meta = ChunkMetadata(**make_metadata(source_origin=good_value))
         assert meta.source_origin == good_value
