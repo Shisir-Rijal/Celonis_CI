@@ -50,6 +50,7 @@ class Settings(BaseSettings):
 
     # --- Web scraping ---
     FIRECRAWL_API_KEY: str | None = None
+    FINNHUB_API_KEY: str | None = None
 
     # --- Backend ---
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]

@@ -16,7 +16,7 @@ class BaseData(BaseModel):
 # --- BaseModels: Sub-Models
 
 class VisualsData(BaseData): 
-    logo: str | None = None
+    logo: str | None = None  # https://finnhub.io/docs/api/company-profile
     colors: list[str] = []
     typography: str | None = None
     images: list[str] | None = None
@@ -44,11 +44,24 @@ class PositioningData(BaseData):
 class NewsletterData(BaseData):
     newsletter: dict[str, Any] | None = None
 
-class FinancialData(BaseData):      
-    revenue: float | None = None
-    stock_price: float | None = None
+class FinancialData(BaseData):
+    # Listed?
     on_stock_market: bool = False
+    # Aktienkurs
+    current_stock_price: float | None = None
+    stock_change: float | None = None
+    percent_change: float | None = None
+    # Evaluation
+    market_cap: float | int | None = None
     market_share: float | int | None = None
+    market_value: float | None = None
+    revenue: float | None = None
+    # Analysis
+    analyst_buy: int | None = None
+    analyst_hold: int | None = None
+    analyst_sell: int | None = None
+    # History
+    price_history: dict[str, float] = {}
 
 class SocialLinks(BaseData):
     instagram: str | None = None
@@ -69,8 +82,10 @@ class SeoGeoData(BaseData):
     geo: dict[str, Any] = {} 
 
 class NewsData(BaseData):
-    news: dict[str, Any] = {}
-    articles: dict[str, Any] = {}
+    news: dict[dict[str, str]] = {}
+
+class Additionals(BaseData):
+    description: str | None # .company_profile Finnhub
 
 
 # --- AgentState:
