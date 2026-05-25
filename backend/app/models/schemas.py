@@ -7,7 +7,7 @@ class ChunkMetadata(BaseModel):
     """this class defines the metadata for a chunk of content, including information about the company, source type, date, URL, title, language, topic, content type, visual type, and chunking strategy."""
     company: str
     source_type: str
-    source_origin: Literal["owned", "earned", "third_party"]
+    source_origin: Literal["owned", "earned", "third_party", "internal"]
     date: datetime
     url: str
     title: str | None
@@ -52,12 +52,18 @@ class ChatResponse(BaseModel):
     """Response body for POST /chat.
 
     In the stub phase `answer` is a fixed string and `sources` is empty.
-    Once the orchestrator is wired up (Issue #11), both will be populated
-    from the real workflow output.
+    Once the orchestrator is wired up (Issue #11), all fields will be
+    populated from the real workflow output.
+
+    ``derivation`` carries the LLM's step-by-step reasoning so the UI can
+    show *how* the answer was reached (Anthropic analytical derivation
+    pattern). Empty string during the stub phase; never None so the
+    frontend can always render it without a null guard.
     """
 
     answer: str
     sources: list[Source] = []
+    derivation: str = ""
 
 
 # ---------------------------------------------------------------------------
