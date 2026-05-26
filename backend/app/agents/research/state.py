@@ -28,11 +28,10 @@ class VisualsData(BaseData):
     illustrations: dict[str, Any] | None = None
 
 class EventsData(BaseData):
-    website_events: list[tuple] | None = None
-    udemy_events: list[tuple] | None = None
-    loma_events: list[tuple] | None = None
-    meetup_events: list[tuple] | None = None
-    event_reports: list[tuple] | None = None # Youtube auch?
+    website_events: list[Any] | None = None
+    loma_events: list[Any] | None = None
+    meetup_events: list[Any] | None = None
+    reported_events: list[Any] | None = None
 
 class PositioningData(BaseData):
     purpose: str | None = None
