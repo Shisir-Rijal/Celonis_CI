@@ -1,4 +1,3 @@
-# Web scraping
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
@@ -7,6 +6,7 @@ from app.agents.research.state import ResearchState, NewsData
 import structlog
 import httpx
 import finnhub
+import asyncio
 import json
 from firecrawl import FirecrawlApp
 from pydantic import BaseModel
@@ -37,7 +37,7 @@ class NewsItem(BaseModel):
 def _get_finnhub_news(ticker: str) -> list[NewsItem]:
     client = finnhub.Client(api_key=get_settings().FINNHUB_API_KEY)
     raw = client.company_news(ticker, _from=today, to=today)
-    
+
     return [
         NewsItem(
             heading=item.get("headline"),
@@ -69,10 +69,10 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
             response = await client.post(
                 "https://google.serper.dev/news",
                 headers={"X-API-KEY": get_settings().SERPER_API_KEY},
-                json={"q": query, "num": 10},
+                json={"q": query, "num": 5},
                 timeout=10,
             )
-        all_raw += response.json().get("news", [])
+            all_raw += response.json().get("news", [])
 
     # Duplikate entfernen anhand der URL
     seen = set()
@@ -85,12 +85,12 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
 
     return [
         NewsItem(
-            heading=item.get("headline"),
-            summary=item.get("summary"),
-            source=item.get("source"),
-            source_link=item.get("url"),
-            image=item.get("image"),
-            date=today,
+            heading=item.get("title"),
+            summary=item.get("snippet"),
+            source="serper",
+            source_link=item.get("link"),
+            image=item.get("imageUrl"),
+            date=item.get("date", today),
         )
         for item in unique
     ]
@@ -99,7 +99,7 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
 # --- Quelle 3: Firecrawl ---
 
 async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
-
+    # Newsroom-/Blog-URL per Serper suchen
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://google.serper.dev/search",
@@ -110,13 +110,13 @@ async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
     results = response.json().get("organic", [])
     if not results:
         return []
-    
+
     url = results[0]["link"]
     app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
-    result = app.scrape_url(url, formats=["markdown"])
+    result = await asyncio.to_thread(app.scrape_url(url, formats=["markdown"]))
     if not result.markdown:
         return []
-    
+
     # LLM extrahiert News-Artikel aus dem gescrapten Text
     openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
     response = await openai.chat.completions.create(
@@ -145,14 +145,12 @@ async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
     ]
 
 
-async def run(state: ResearchState) -> list[NewsItem]:
-
+async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
     try:
         all_news: list[NewsItem] = []
 
         # Finnhub
-        client = finnhub.Client(api_key=get_settings().FINNHUB_API_KEY)
         ticker = _get_symbol(domain)
         if ticker:
             all_news += _get_finnhub_news(ticker)
@@ -162,7 +160,7 @@ async def run(state: ResearchState) -> list[NewsItem]:
 
         # Firecrawl
         all_news += await _get_firecrawl_news(domain)
-        
+
         return {
             "news": NewsData(news=all_news, source="finnhub+serper+firecrawl"),
             "completed_nodes": ["news"],
@@ -170,7 +168,6 @@ async def run(state: ResearchState) -> list[NewsItem]:
     except Exception as e:
         logger.error("node_failed", node="news", error=str(e))
         return {"errors": [f"news: {e}"]}
-    
 
 
 if __name__ == "__main__":

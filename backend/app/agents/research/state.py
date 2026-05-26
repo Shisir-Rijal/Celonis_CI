@@ -39,7 +39,9 @@ class PositioningData(BaseData):
     vision: str | None = None
     mission: str | None = None
     values: dict[str, Any] | None = None
+    employer_positioning: dict[str, Any] | None = None
     blogs: dict[str, Any] | None = None
+    job_positing_employer_description: str | None = None
 
 class NewsletterData(BaseData):
     newsletter: dict[str, Any] | None = None
