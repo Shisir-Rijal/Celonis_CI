@@ -52,10 +52,8 @@ class FinancialData(BaseData):
     stock_change: float | None = None
     percent_change: float | None = None
     # Evaluation
-    market_cap: float | int | None = None
-    market_share: float | int | None = None
-    market_value: float | None = None
-    revenue: float | None = None
+    # market_cap: float | int | None = None     -> need advanced API (paid for)
+    # revenue: float | None = None              -> need advanced API (paid for)
     # Analysis
     analyst_buy: int | None = None
     analyst_hold: int | None = None
@@ -82,7 +80,7 @@ class SeoGeoData(BaseData):
     geo: dict[str, Any] = {} 
 
 class NewsData(BaseData):
-    news: list[dict[str, str]] = {}
+    news: list[Any] = []
 
 class Additionals(BaseData):
     description: str | None # .company_profile Finnhub

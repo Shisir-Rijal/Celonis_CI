@@ -14,9 +14,12 @@ Usage:
 
 from functools import lru_cache
 from typing import Any
+from pathlib import Path
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class Settings(BaseSettings):
@@ -51,6 +54,7 @@ class Settings(BaseSettings):
     # --- Web scraping ---
     FIRECRAWL_API_KEY: str | None = None
     FINNHUB_API_KEY: str | None = None
+    SERPER_API_KEY: str | None = None
 
     # --- Backend ---
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
