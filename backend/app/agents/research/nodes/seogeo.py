@@ -9,3 +9,6 @@ async def run(state: ResearchState) -> dict:
     return {
         "completed_nodes": state["completed_nodes"] + ["node_seogeo"]
     }
+
+# SEO API finden
+# GEO verschiedene modelle suchanfragen testen
