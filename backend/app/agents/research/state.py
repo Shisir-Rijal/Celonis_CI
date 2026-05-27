@@ -62,8 +62,8 @@ class FinancialData(BaseData):
 
 class SocialData(BaseData):
     social_links: dict[str, str] | None = None
-    reddit_content: dict[str, Any] | None = None
-    youtube_content: dict[str, Any] | None = None
+    youtube_content: Any | None = None
+    yt_search_results: list[Any] | None = None
 
 class SeoGeoData(BaseData):
     seo: dict[str, Any] = {}
