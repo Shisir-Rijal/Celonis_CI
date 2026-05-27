@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     SERPER_API_KEY: str | None = None
     BRANDFETCH_API_KEY: str | None = None
     BRANDFETCH_CLIENT_ID: str | None = None
+    YOUTUBE_API_KEY: str | None = None
 
     # --- Backend ---
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
