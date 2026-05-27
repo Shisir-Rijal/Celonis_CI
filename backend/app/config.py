@@ -17,7 +17,7 @@ from typing import Any
 from pathlib import Path
 
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource, EnvSettingsSource, DotEnvSettingsSource
 
 _ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     variable is missing or empty. Optional fields have sensible defaults.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
     # --- LLM: OpenAI ---
     OPENAI_API_KEY: str
@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     FIRECRAWL_API_KEY: str | None = None
     FINNHUB_API_KEY: str | None = None
     SERPER_API_KEY: str | None = None
+    BRANDFETCH_API_KEY: str | None = None
+    BRANDFETCH_CLIENT_ID: str | None = None
 
     # --- Backend ---
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
@@ -83,6 +85,18 @@ class Settings(BaseSettings):
                 "The login endpoint has no rate limiting — a short password is a real risk."
             )
         return self
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        _settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        **_kwargs: object,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # .env hat Vorrang vor System-Umgebungsvariablen
+        return (init_settings, dotenv_settings, env_settings)
 
     @field_validator("OPENAI_BASE_URL", mode="before")
     @classmethod

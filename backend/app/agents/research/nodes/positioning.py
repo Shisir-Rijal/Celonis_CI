@@ -7,7 +7,7 @@ import structlog
 import httpx
 import json
 from openai import AsyncOpenAI
-from firecrawl import FirecrawlApp
+from firecrawl import V1FirecrawlApp as FirecrawlApp
 from app.agents.research.state import ResearchState, PositioningData
 from app.config import get_settings
 

@@ -15,17 +15,15 @@ class BaseData(BaseModel):
 
 # --- BaseModels: Sub-Models
 
-class VisualsData(BaseData): 
-    logo: str | None = None  # https://finnhub.io/docs/api/company-profile
-    colors: list[str] = []
-    typography: str | None = None
+class VisualsData(BaseData):
+    logo: list[str] = []  
+    colors: dict[str, list[str]] = {}  # {"primary": [...], "secondary": [...]}
+    fonts: list[str] | None = None
     images: list[str] | None = None
-    graphics: list[str] | None = None
     animations: dict[str, Any] | None = None
-    videos: dict[str, Any] = {}
+    videos: list[str] = [] 
     icons: dict[str, Any] | None = None
-    diagrams: dict[str, Any] | None = None
-    illustrations: dict[str, Any] | None = None
+    # diagrams?
 
 class EventsData(BaseData):
     website_events: list[Any] | None = None
@@ -62,17 +60,8 @@ class FinancialData(BaseData):
     # History
     price_history: dict[str, float] = {}
 
-class SocialLinks(BaseData):
-    instagram: str | None = None
-    linkedin: str | None = None
-    facebook: str | None = None
-    reddit: str | None = None
-    youtube: str | None = None
-    tiktok: str | None = None
-    website: str | None = None
-
 class SocialData(BaseData):
-    social_links: SocialLinks = Field(default_factory=SocialLinks)
+    social_links: dict[str, str] | None = None
     reddit_content: dict[str, Any] | None = None
     youtube_content: dict[str, Any] | None = None
 
