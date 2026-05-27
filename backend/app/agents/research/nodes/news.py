@@ -8,7 +8,7 @@ import httpx
 import finnhub
 import asyncio
 import json
-from firecrawl import FirecrawlApp
+from firecrawl import V1FirecrawlApp as FirecrawlApp
 from pydantic import BaseModel
 from app.config import get_settings
 from datetime import date

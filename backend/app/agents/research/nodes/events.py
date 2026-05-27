@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from app.agents.research.state import ResearchState, EventsData
 from app.config import get_settings
 from pydantic import BaseModel
-from firecrawl import FirecrawlApp
+from firecrawl import V1FirecrawlApp as FirecrawlApp
 import json
 import asyncio
 from openai import AsyncOpenAI
