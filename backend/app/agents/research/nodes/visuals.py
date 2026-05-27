@@ -10,8 +10,9 @@ from firecrawl import V1FirecrawlApp as FirecrawlApp
 from openai import AsyncOpenAI
 from app.agents.research.state import ResearchState, VisualsData
 import structlog
-import httpx
 from app.config import get_settings
+from app.agents.shared.utils.brandfetch import _get_brand_data
+
 
 
 logger = structlog.get_logger(__name__)
@@ -45,21 +46,6 @@ async def _get_page_contents(domain: str, num_pages: int = 5) -> list[tuple[str,
 
 
 # --- Brandfetch: Logo, Colors, Fonts ---
-
-async def _get_brand_data(domain: str) -> dict:
-    api_key = get_settings().BRANDFETCH_API_KEY
-    if not api_key:
-        return {}
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"https://api.brandfetch.io/v2/brands/{domain}",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=10,
-        )
-    if response.status_code != 200:
-        logger.warning("brandfetch_failed", status=response.status_code, domain=domain)
-        return {}
-    return response.json()
 
 
 def _extract_logos(data: dict, pages: list[tuple[str, str]]) -> list[str]:
