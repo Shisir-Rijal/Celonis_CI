@@ -27,17 +27,25 @@ class VisualsData(BaseData):
 
 class EventsData(BaseData):
     website_events: list[Any] | None = None
-    loma_events: list[Any] | None = None
+    luma_events: list[Any] | None = None
     meetup_events: list[Any] | None = None
     reported_events: list[Any] | None = None
+
+class BlogData(BaseModel):
+    heading: str | None = None
+    subheading: str | None = None
+    content: str | list[str] | None = None
+    source_link: str | None = None
+    publishing_date: str | None = None
 
 class PositioningData(BaseData):
     purpose: str | None = None
     vision: str | None = None
     mission: str | None = None
-    values: dict[str, Any] | None = None
-    employer_positioning: dict[str, Any] | None = None
-    blogs: dict[str, Any] | None = None
+    company_values : dict[str, Any] | None = None
+    employer_values: dict[str, Any] | str | None = None
+    employer_positioning: str | None = None
+    blogs: list[BlogData] | dict[str, Any] | None = None
     job_positing_employer_description: str | None = None
 
 class NewsletterData(BaseData):

@@ -7,7 +7,9 @@ from app.config import get_settings
 import finnhub
 import structlog
 import httpx
+import asyncio
 from openai import AsyncOpenAI
+import yfinance as yf
 
 
 
@@ -66,6 +68,16 @@ async def _get_analyst_trends(domain: str) -> tuple[int | None, int | None, int 
 
 
 
+def _get_price_history(ticker: str) -> dict[str, float]:
+    hist = yf.Ticker(ticker).history(period="5y", interval="1mo")
+    if hist.empty:
+        return {}
+    return {
+        str(date)[:7]: round(float(price), 2)
+        for date, price in hist["Close"].items()
+    }
+
+
 async def _scrape_financials(domain: str) -> FinancialData:
     client = finnhub.Client(api_key=settings.FINNHUB_API_KEY)
 
@@ -74,11 +86,11 @@ async def _scrape_financials(domain: str) -> FinancialData:
         return FinancialData(on_stock_market=False, source="finnhub")
 
     print(f"Ticker found: {ticker}")
-    quote = client.quote(ticker)
-    print(f"Quote OK: {quote}")
-    # profile = client.company_profile(symbol=ticker)
-    buy, hold, sell = await _get_analyst_trends(domain)
-    print(f"Analyst OK: {buy}, {hold}, {sell}")
+    quote, price_history, (buy, hold, sell) = await asyncio.gather(
+        asyncio.to_thread(client.quote, ticker),
+        asyncio.to_thread(_get_price_history, ticker),
+        _get_analyst_trends(domain),
+    )
 
     return FinancialData(
         on_stock_market=True,
@@ -88,6 +100,7 @@ async def _scrape_financials(domain: str) -> FinancialData:
         analyst_buy=buy,
         analyst_hold=hold,
         analyst_sell=sell,
+        price_history=price_history,
         source="finnhub",
     )
 

@@ -15,53 +15,148 @@ from app.config import get_settings
 logger = structlog.get_logger(__name__)
 
 
-async def _scrape_positioning(domain: str) -> PositioningData:
-    # About-/Mission-Seite per Serper finden
+async def _fetch_markdown(query: str, num: int = 3) -> str | None:
+    app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
     async with httpx.AsyncClient() as client:
-        response = await client.post(
+        resp = await client.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": get_settings().SERPER_API_KEY},
-            json={"q": f"site:{domain} about OR mission OR vision OR values or careers or blogs or company", "num": 1},
+            json={"q": query, "num": num},
             timeout=10,
         )
-    results = response.json().get("organic", [])
-    if not results:
-        return PositioningData(source="firecrawl")
+    results = resp.json().get("organic", [])
+    for r in results:
+        try:
+            scraped = await asyncio.to_thread(app.scrape_url, r["link"], formats=["markdown"])
+            md = getattr(scraped, "markdown", None)
+            if md:
+                return md
+        except Exception:
+            continue
+    return None
 
-    url = results[0]["link"]
-    app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
-    result = await asyncio.to_thread(app.scrape_url, url, formats=["markdown"])
-    if not result.markdown:
-        return PositioningData(source="firecrawl")
 
-    openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
-    response = await openai.chat.completions.create(
+async def _extract_about_company(markdown: str, openai: AsyncOpenAI) -> dict:
+    resp = await openai.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": (
-                "Extract company positioning from this text. "
-                "Return a JSON object with fields: purpose, vision, mission, values (as object), employer_positioning (as object), blogs (as object), job_positing_employer_description. "
-                "Use null if a field is not found."
+                "Extract company positioning from this about OR company page. "
+                "Return a JSON object with fields:\n"
+                "- purpose: the company's purpose or overarching goal, or null\n"
+                "- vision: the future state the company aims for, or null\n"
+                "- mission: the company's long-term mission statement, or null\n"
+                "- company_values: the company's core values as a service provider — return as a dict {value_name: description}, or null\n"
+                "Use null for any field not found on this page."
             )},
-            {"role": "user", "content": result.markdown[:4000]},
+            {"role": "user", "content": markdown[:5000]},
         ],
         response_format={"type": "json_object"},
     )
+    return json.loads(resp.choices[0].message.content)
 
-    data = json.loads(response.choices[0].message.content)
+
+async def _extract_employer(markdown: str, openai: AsyncOpenAI) -> dict:
+    resp = await openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": (
+                "Extract employer branding information from careers OR jobs page. "
+                "Return a JSON object with fields:\n"
+                "- employer_values: values the company promotes as an employer — return as a dict {value_name: description}, or null\n"
+                "- employer_positioning: a short text describing how the company positions itself as an employer (culture, benefits, work environment), or null\n"
+                "- job_positing_employer_description: the exact company description or 'about us' blurb used in job postings, or null\n"
+                "Use null for any field not found on this page."
+            )},
+            {"role": "user", "content": markdown[:5000]},
+        ],
+        response_format={"type": "json_object"},
+    )
+    return json.loads(resp.choices[0].message.content)
+
+
+async def _scrape_blog_posts(listing_markdown: str, openai: AsyncOpenAI) -> list | None:
+    # Step 1: extract individual blog post URLs from the listing page
+    url_resp = await openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": (
+                "Extract individual blog post URLs from this blog listing page. "
+                "Return a JSON object with key 'urls' containing a list of full URLs (starting with https://). "
+                "Only include URLs that link to individual articles, not category or tag pages. Max 5 URLs."
+            )},
+            {"role": "user", "content": listing_markdown[:4000]},
+        ],
+        response_format={"type": "json_object"},
+    )
+    urls: list[str] = json.loads(url_resp.choices[0].message.content).get("urls", [])
+    if not urls:
+        return None
+
+    # Step 2: scrape each post and extract full content
+    app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
+
+    async def _scrape_one(url: str) -> dict | None:
+        try:
+            scraped = await asyncio.to_thread(app.scrape_url, url, formats=["markdown"])
+            md = getattr(scraped, "markdown", None)
+            if not md:
+                return None
+            resp = await openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": (
+                        "Extract this blog post. Return a JSON object with fields:\n"
+                        "- heading: article title\n"
+                        "- subheading: subtitle or lead sentence if present, or null\n"
+                        "- content: the FULL text of the article — every paragraph and section, not a summary\n"
+                        "- publishing_date: YYYY-MM-DD if explicitly stated, null otherwise"
+                    )},
+                    {"role": "user", "content": md[:10000]},
+                ],
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(resp.choices[0].message.content)
+            data["source_link"] = url
+            return data
+        except Exception:
+            return None
+
+    results = await asyncio.gather(*[_scrape_one(u) for u in urls[:5]])
+    blogs = [r for r in results if r is not None]
+    return blogs or None
+
+
+async def _scrape_positioning(domain: str) -> PositioningData:
+    openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
+
+    company = domain.replace(".com", "").replace(".io", "").replace(".de", "")
+    about_md, careers_md, blog_md = await asyncio.gather(
+        _fetch_markdown(f"site:{domain} about OR company OR mission OR vision OR values"),
+        _fetch_markdown(f"{company} careers employer culture benefits site:{domain}"),
+        _fetch_markdown(f"site:{domain} blog OR insights OR resources"),
+    )
+
+    about_data, employer_data, blogs = await asyncio.gather(
+        _extract_about_company(about_md, openai) if about_md else asyncio.sleep(0, result={}),
+        _extract_employer(careers_md, openai) if careers_md else asyncio.sleep(0, result={}),
+        _scrape_blog_posts(blog_md, openai) if blog_md else asyncio.sleep(0, result=None),
+    )
+
     return PositioningData(
-        purpose=data.get("purpose"),
-        vision=data.get("vision"),
-        mission=data.get("mission"),
-        values=data.get("values"),
-        employer_positioning=data.get("employer_positioning"),
-        job_positing_employer_description = data.get("job_positing_employer_description"),
-        blogs=data.get("blogs"),
-        source="firecrawl",
+        purpose=about_data.get("purpose"),
+        vision=about_data.get("vision"),
+        mission=about_data.get("mission"),
+        company_values=about_data.get("company_values"),
+        employer_values=employer_data.get("employer_values"),
+        employer_positioning=employer_data.get("employer_positioning"),
+        job_positing_employer_description=employer_data.get("job_positing_employer_description"),
+        blogs=blogs,
+        source="serper+firecrawl",
     )
 
 
-async def run(state: ResearchState) -> dict[str, any]:
+async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
     try:
         data = await _scrape_positioning(domain)
