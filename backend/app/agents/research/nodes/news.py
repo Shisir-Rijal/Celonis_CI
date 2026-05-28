@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from app.agents.research.state import ResearchState, NewsData
+from app.agents.research.state import ResearchState, NewsData, NewsItem
 import structlog
 import httpx
 import finnhub
@@ -19,17 +19,6 @@ from openai import AsyncOpenAI
 settings = get_settings()
 logger = structlog.get_logger(__name__)
 today = date.today().strftime("%Y-%m-%d")
-
-
-class NewsItem(BaseModel):
-    heading: str | None = None
-    text: str | None = None
-    image: str | None = None
-    author: str | None = None
-    summary: str | None = None
-    source: str | None = None
-    source_link: str | None = None
-    date: str | None = None
 
 
 # --- Quelle 1: Finnhub ---
