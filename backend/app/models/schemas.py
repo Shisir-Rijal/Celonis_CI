@@ -24,6 +24,8 @@ class Chunk(BaseModel):
     metadata: ChunkMetadata
     embedding: list[float] | None
     created_at: datetime | None
+    context_header: str = ""
+    document_id: UUID | None = None
 
 
 # ---------------------------------------------------------------------------
