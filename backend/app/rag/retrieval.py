@@ -18,7 +18,7 @@ RRF formula (Cormack et al., 2009):
 import asyncio
 import json
 import structlog
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from supabase import Client
@@ -133,7 +133,7 @@ def _sync_vector_search(
             "filter": rpc_filter,
         },
     ).execute()
-    return [dict(r) for r in (resp.data or [])]
+    return cast(list[dict[str, Any]], resp.data or [])
 
 
 def _sync_bm25_search(
@@ -151,7 +151,7 @@ def _sync_bm25_search(
             "filter": rpc_filter,
         },
     ).execute()
-    return [dict(r) for r in (resp.data or [])]
+    return cast(list[dict[str, Any]], resp.data or [])
 
 
 # ---------------------------------------------------------------------------
@@ -232,10 +232,10 @@ async def search_chunks(
 
     merged: list[Chunk] = []
     for chunk_id, rrf_score in ranked[:k]:
-        row = row_by_id.get(chunk_id)
-        if row is None:
+        candidate = row_by_id.get(chunk_id)
+        if candidate is None:
             continue
-        chunk = _row_to_chunk(row)
+        chunk = _row_to_chunk(candidate)
         chunk.relevance_score = rrf_score
         merged.append(chunk)
 
