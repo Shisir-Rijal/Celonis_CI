@@ -53,6 +53,28 @@ def _get_finnhub_news(ticker: str) -> list[NewsItem]:
 
 # --- Quelle 2: SerperAPI ---
 
+async def _scrape_article_text(url: str, app: FirecrawlApp, openai: AsyncOpenAI) -> str | None:
+    try:
+        scraped = await asyncio.to_thread(app.scrape_url, url, formats=["markdown"])
+        md = getattr(scraped, "markdown", None)
+        if not md:
+            return None
+        resp = await openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": (
+                    "Extract the full text of this news article — every paragraph verbatim, not a summary. "
+                    'Return JSON: {"text": "...full article text..."}.'
+                )},
+                {"role": "user", "content": md[:10000]},
+            ],
+            response_format={"type": "json_object"},
+        )
+        return json.loads(resp.choices[0].message.content).get("text")
+    except Exception:
+        return None
+
+
 async def _get_serper_news(domain: str) -> list[NewsItem]:
     company = domain.replace(".com", "").replace(".io", "")
     all_raw = []
@@ -74,8 +96,7 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
             )
             all_raw += response.json().get("news", [])
 
-    # Duplikate entfernen anhand der URL
-    seen = set()
+    seen: set[str] = set()
     unique = []
     for item in all_raw:
         url = item.get("link")
@@ -83,13 +104,24 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
             seen.add(url)
             unique.append(item)
 
+    app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
+    openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
+
+    # scrape full text for up to 5 articles in parallel
+    texts = await asyncio.gather(*[
+        _scrape_article_text(item["link"], app, openai)
+        for item in unique[:5]
+    ])
+    text_map = {item["link"]: text for item, text in zip(unique[:5], texts)}
+
     return [
         NewsItem(
             heading=item.get("title"),
+            text=text_map.get(item.get("link")),
             summary=item.get("snippet"),
             source="serper",
             source_link=item.get("link"),
-            image=item.get("imageUrl"),
+            image=item.get("imageUrl") if (item.get("imageUrl") or "").startswith("http") else None,
             date=item.get("date", today),
         )
         for item in unique
@@ -99,7 +131,6 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
 # --- Quelle 3: Firecrawl ---
 
 async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
-    # Newsroom-/Blog-URL per Serper suchen
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://google.serper.dev/search",
@@ -111,38 +142,65 @@ async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
     if not results:
         return []
 
-    url = results[0]["link"]
     app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
-    result = await asyncio.to_thread(app.scrape_url(url, formats=["markdown"]))
-    if not result.markdown:
+    openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
+
+    # Step 1: scrape the listing page to extract individual article URLs
+    listing = await asyncio.to_thread(app.scrape_url, results[0]["link"], formats=["markdown"])
+    if not getattr(listing, "markdown", None):
         return []
 
-    # LLM extrahiert News-Artikel aus dem gescrapten Text
-    openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
-    response = await openai.chat.completions.create(
+    url_resp = await openai.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": (
-                "Extract news articles from this text. "
-                "Return a JSON array of objects with fields: heading, summary, source_link, date. "
-                "Only include articles from today if possible. Max 5 articles."
+                "Extract individual news/blog article URLs from this listing page. "
+                "Return a JSON object with key 'urls' containing a list of full URLs (starting with https://). "
+                "Only include URLs that link to individual articles, not category or tag pages. Max 5 URLs."
             )},
-            {"role": "user", "content": result.markdown[:4000]},
+            {"role": "user", "content": listing.markdown[:4000]},
         ],
         response_format={"type": "json_object"},
     )
+    urls: list[str] = json.loads(url_resp.choices[0].message.content).get("urls", [])
+    if not urls:
+        return []
 
-    articles = json.loads(response.choices[0].message.content).get("articles", [])
-    return [
-        NewsItem(
-            heading=a.get("heading"),
-            summary=a.get("summary"),
-            source="firecrawl",
-            source_link=a.get("source_link"),
-            date=a.get("date", today),
-        )
-        for a in articles
-    ]
+    # Step 2: scrape each article for full text
+    async def _scrape_article(url: str) -> NewsItem | None:
+        try:
+            scraped = await asyncio.to_thread(app.scrape_url, url, formats=["markdown"])
+            md = getattr(scraped, "markdown", None)
+            if not md:
+                return None
+            resp = await openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": (
+                        "Extract this news article. Return a JSON object with fields:\n"
+                        "- heading: article title\n"
+                        "- text: the FULL article text — every paragraph verbatim, not a summary\n"
+                        "- author: author name if present, or null\n"
+                        "- date: YYYY-MM-DD if explicitly stated, null otherwise"
+                    )},
+                    {"role": "user", "content": md[:10000]},
+                ],
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(resp.choices[0].message.content)
+            return NewsItem(
+                heading=data.get("heading"),
+                text=data.get("text"),
+                author=data.get("author"),
+                source="firecrawl",
+                source_link=url,
+                date=data.get("date", today),
+            )
+        except Exception:
+            return None
+
+    scraped = await asyncio.gather(*[_scrape_article(u) for u in urls[:5]])
+    return [r for r in scraped if r is not None]
 
 
 async def run(state: ResearchState) -> dict:
