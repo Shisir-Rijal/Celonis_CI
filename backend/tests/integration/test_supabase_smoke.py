@@ -252,3 +252,182 @@ class TestPipelineIntegration:
             mock_embed.assert_not_awaited()
 
         assert first_ids == second_ids
+
+
+# ---------------------------------------------------------------------------
+# Hybrid retrieval integration — real Supabase, mocked embed_text
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def retrieval_fixture_chunk(supabase_client):
+    """Insert a chunk with a known embedding vector for retrieval smoke tests.
+
+    Uses insert_chunk directly (no pipeline) so the embedding vector is
+    controlled — the same vector is used as the query vector in vector search,
+    guaranteeing the chunk ranks first. No OpenAI credits consumed.
+
+    The chunk stays in the DB after the test run (safe to delete manually).
+    """
+    from app.models.schemas import Chunk, ChunkMetadata
+    from app.rag.repository import insert_chunk
+
+    KNOWN_VECTOR = [0.1] * 1536
+
+    meta = ChunkMetadata(
+        company="CelonisSearchTest",
+        source_type="press_release",
+        source_origin="owned",
+        date=datetime(2025, 6, 1, tzinfo=timezone.utc),
+        url=f"https://celonis.com/retrieval-smoke-{uuid4()}",
+        title="Retrieval Smoke Test",
+        language="en",
+        topic=["process_mining", "smoke_test"],
+        content_type="text",
+        visual_type=None,
+        chunking_strategy="structural",
+    )
+    chunk = Chunk(
+        id=uuid4(),
+        content="Celonis process mining software quarterly results announcement smoke test",
+        metadata=meta,
+        embedding=KNOWN_VECTOR,
+        created_at=None,
+        context_header="press_release | CelonisSearchTest | 2025-06-01",
+        document_id=None,
+    )
+    saved = insert_chunk(chunk, client=supabase_client)
+    return saved
+
+
+@pytest.mark.integration
+class TestHybridRetrievalIntegration:
+    """Smoke tests for the hybrid retrieval RPC functions and search_chunks().
+
+    Uses a fixture chunk with a known embedding vector so no OpenAI call is
+    needed. embed_text is mocked to return the same known vector, ensuring
+    the fixture chunk ranks first in vector results.
+    """
+
+    KNOWN_VECTOR = [0.1] * 1536
+    SEARCH_COMPANY = "CelonisSearchTest"
+
+    def test_vector_rpc_finds_fixture_chunk(
+        self, supabase_client, retrieval_fixture_chunk
+    ) -> None:
+        """match_chunks_vector RPC returns our fixture chunk when queried
+        with its exact embedding vector."""
+        resp = supabase_client.rpc(
+            "match_chunks_vector",
+            {
+                "query_embedding": self.KNOWN_VECTOR,
+                "match_count": 10,
+                "filter": {"company": self.SEARCH_COMPANY},
+            },
+        ).execute()
+        ids = [r["id"] for r in resp.data]
+        assert str(retrieval_fixture_chunk.id) in ids
+
+    def test_bm25_rpc_finds_fixture_chunk(
+        self, supabase_client, retrieval_fixture_chunk
+    ) -> None:
+        """match_chunks_bm25 RPC finds our fixture chunk by keyword."""
+        resp = supabase_client.rpc(
+            "match_chunks_bm25",
+            {
+                "query_text": "celonis process mining quarterly",
+                "match_count": 10,
+                "filter": {"company": self.SEARCH_COMPANY},
+            },
+        ).execute()
+        ids = [r["id"] for r in resp.data]
+        assert str(retrieval_fixture_chunk.id) in ids
+
+    def test_metadata_filter_excludes_wrong_company(
+        self, supabase_client, retrieval_fixture_chunk
+    ) -> None:
+        """Filtering by a different company returns no results for our chunk."""
+        resp = supabase_client.rpc(
+            "match_chunks_vector",
+            {
+                "query_embedding": self.KNOWN_VECTOR,
+                "match_count": 10,
+                "filter": {"company": "SAP"},
+            },
+        ).execute()
+        ids = [r["id"] for r in resp.data]
+        assert str(retrieval_fixture_chunk.id) not in ids
+
+    @pytest.mark.asyncio
+    async def test_search_chunks_no_duplicates(
+        self, supabase_client, retrieval_fixture_chunk
+    ) -> None:
+        """search_chunks() returns no duplicate chunk IDs."""
+        from unittest.mock import AsyncMock, patch
+        from app.rag.retrieval import search_chunks
+
+        with patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=self.KNOWN_VECTOR)):
+            results = await search_chunks(
+                "celonis process mining",
+                db_client=supabase_client,
+            )
+
+        ids = [str(c.id) for c in results]
+        assert len(ids) == len(set(ids))
+
+    @pytest.mark.asyncio
+    async def test_search_chunks_relevance_score_set(
+        self, supabase_client, retrieval_fixture_chunk
+    ) -> None:
+        """Every chunk returned by search_chunks() has relevance_score set."""
+        from unittest.mock import AsyncMock, patch
+        from app.rag.retrieval import search_chunks
+
+        with patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=self.KNOWN_VECTOR)):
+            results = await search_chunks(
+                "celonis process mining",
+                db_client=supabase_client,
+            )
+
+        assert len(results) > 0
+        assert all(c.relevance_score is not None for c in results)
+
+    @pytest.mark.asyncio
+    async def test_search_chunks_company_filter_narrows_results(
+        self, supabase_client, retrieval_fixture_chunk
+    ) -> None:
+        """Passing a wrong company filter excludes our fixture chunk."""
+        from unittest.mock import AsyncMock, patch
+        from app.models.schemas import ChunkFilter
+        from app.rag.retrieval import search_chunks
+
+        wrong_filter = ChunkFilter(company="SAP")
+        with patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=self.KNOWN_VECTOR)):
+            results = await search_chunks(
+                "process mining",
+                wrong_filter,
+                db_client=supabase_client,
+            )
+
+        ids = [str(c.id) for c in results]
+        assert str(retrieval_fixture_chunk.id) not in ids
+
+    @pytest.mark.asyncio
+    async def test_hybrid_result_contains_fixture_chunk(
+        self, supabase_client, retrieval_fixture_chunk
+    ) -> None:
+        """The fixture chunk appears in hybrid results when queried correctly."""
+        from unittest.mock import AsyncMock, patch
+        from app.models.schemas import ChunkFilter
+        from app.rag.retrieval import search_chunks
+
+        f = ChunkFilter(company=self.SEARCH_COMPANY)
+        with patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=self.KNOWN_VECTOR)):
+            results = await search_chunks(
+                "celonis process mining quarterly",
+                f,
+                k=10,
+                db_client=supabase_client,
+            )
+
+        ids = [str(c.id) for c in results]
+        assert str(retrieval_fixture_chunk.id) in ids
