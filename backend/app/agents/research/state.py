@@ -73,9 +73,21 @@ class SocialData(BaseData):
     youtube_content: Any | None = None
     yt_search_results: list[Any] | None = None
 
+class SeoKeywordSighting(BaseModel):
+    keyword: str
+    company_mentioned: bool = False
+    position: int | None = None  # rank in Google results (1–10)
+    link: str | None = None
+
+class GeoKeywordSighting(BaseModel):
+    keyword: str
+    llm: str  # which model was queried
+    company_mentioned: bool = False
+    context: str | None = None  # excerpt from LLM response mentioning the company
+
 class SeoGeoData(BaseData):
-    seo: dict[str, Any] = {}
-    geo: dict[str, Any] = {} 
+    seo: list[SeoKeywordSighting] = []
+    geo: list[GeoKeywordSighting] = []
 
 class NewsData(BaseData):
     news: list[Any] = []

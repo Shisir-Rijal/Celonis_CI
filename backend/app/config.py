@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     # --- LLM: Anthropic + Perplexity (optional, Phase 2) ---
     ANTHROPIC_API_KEY: str | None = None
     PERPLEXITY_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
 
     # --- Supabase ---
     SUPABASE_URL: str | None = None
