@@ -18,6 +18,7 @@ Usage:
     assert saved.id == chunk.id
 """
 
+import json
 from typing import Any, cast
 from uuid import UUID
 
@@ -49,20 +50,35 @@ def _chunk_to_row(chunk: Chunk) -> dict:
         "content": chunk.content,
         "metadata": chunk.metadata.model_dump(mode="json"),
         "embedding": chunk.embedding,
+        "context_header": chunk.context_header,
+        "embedding_model_version": "text-embedding-3-small",
     }
     if chunk.created_at is not None:
         row["created_at"] = chunk.created_at.isoformat()
+    if chunk.document_id is not None:
+        row["document_id"] = str(chunk.document_id)
     return row
 
 
 def _row_to_chunk(row: dict) -> Chunk:
-    """Deserialise a Supabase row dict back into a ``Chunk`` instance."""
+    """Deserialise a Supabase row dict back into a ``Chunk`` instance.
+
+    pgvector is returned by PostgREST as a JSON string ("[0.1,0.2,...]")
+    rather than a native Python list. We normalise it here so callers
+    always receive ``list[float] | None``, never a raw string.
+    """
+    raw_emb = row.get("embedding")
+    if isinstance(raw_emb, str):
+        raw_emb = json.loads(raw_emb)
+
     return Chunk(
         id=UUID(row["id"]),
         content=row["content"],
         metadata=ChunkMetadata(**row["metadata"]),
-        embedding=row.get("embedding"),
+        embedding=raw_emb,
         created_at=row.get("created_at"),
+        context_header=row.get("context_header", ""),
+        document_id=UUID(row["document_id"]) if row.get("document_id") else None,
     )
 
 
