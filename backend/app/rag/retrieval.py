@@ -230,20 +230,24 @@ async def search_chunks(
     for row in bm25_rows:
         row_by_id.setdefault(row["id"], row)
 
-    merged: list[Chunk] = []
-    for chunk_id, rrf_score in ranked[:k]:
+    all_chunks: list[Chunk] = []
+    for chunk_id, rrf_score in ranked:
         candidate = row_by_id.get(chunk_id)
         if candidate is None:
             continue
         chunk = _row_to_chunk(candidate)
         chunk.relevance_score = rrf_score
-        merged.append(chunk)
+        all_chunks.append(chunk)
 
     # ------------------------------------------------------------------
-    # Phase 4 — topic post-filter (Python-side, see _apply_topic_filter).
+    # Phase 4 — topic post-filter before top-k slice.
+    # Filtering must happen first: if topic-matching chunks rank just
+    # below k they would be silently dropped by an earlier [:k] cut.
     # ------------------------------------------------------------------
     if filters.topic:
-        merged = _apply_topic_filter(merged, filters.topic)
+        all_chunks = _apply_topic_filter(all_chunks, filters.topic)
+
+    merged = all_chunks[:k]
 
     logger.info(
         "retrieval_final",

@@ -345,6 +345,34 @@ class TestSearchChunks:
         assert len(result) <= 2
 
     @pytest.mark.asyncio
+    async def test_topic_filter_applied_before_k_slice(self) -> None:
+        """Topic-matching chunks ranked below k must not be dropped.
+
+        Regression test for the bug where [:k] was applied before
+        _apply_topic_filter: if the only topic-matching chunk ranked at
+        position k+1 it would silently disappear from results.
+        """
+        row_no_topic = make_rpc_row(chunk_id=ID_A)
+        row_no_topic["metadata"]["topic"] = ["finance"]
+        row_no_topic2 = make_rpc_row(chunk_id=ID_B)
+        row_no_topic2["metadata"]["topic"] = ["finance"]
+        row_topic = make_rpc_row(chunk_id=ID_C)
+        row_topic["metadata"]["topic"] = ["product"]
+
+        # All three rows returned by both searches; k=2 would cut ID_C if
+        # the slice happened before the topic filter.
+        rows = [row_no_topic, row_no_topic2, row_topic]
+        with (
+            patch(f"{BASE}.embed_text", new=AsyncMock(return_value=FAKE_VECTOR)),
+            patch(f"{BASE}.asyncio.to_thread", new=AsyncMock(side_effect=[rows, rows])),
+        ):
+            result = await search_chunks(
+                "test", ChunkFilter(topic=["product"]), k=2
+            )
+        ids = [str(c.id) for c in result]
+        assert str(ID_C) in ids
+
+    @pytest.mark.asyncio
     async def test_embed_error_propagates(self) -> None:
         """If embed_text raises, search_chunks propagates the error."""
         with patch(f"{BASE}.embed_text", new=AsyncMock(side_effect=RuntimeError("API down"))):
