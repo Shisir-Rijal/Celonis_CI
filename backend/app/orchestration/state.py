@@ -9,7 +9,7 @@ AgentCall schema.
 """
 
 from __future__ import annotations
-
+from uuid import UUID
 from datetime import datetime
 from typing import Any, Literal, TypedDict
 
@@ -52,6 +52,8 @@ class WorkflowState(TypedDict):
 
     # ── Input ────────────────────────────────────────────────────
     query_input: str
+    session_id: UUID | None # Session context (added in Issue #59)
+    query: str
 
     # ── Agent bookkeeping ────────────────────────────────────────
     agent_calls: list[AgentCall]
