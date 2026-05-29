@@ -12,10 +12,7 @@ Follows the same pattern as app/rag/repository.py:
 Issue #58: conversation memory repository and smoke test extension
 """
 from typing import Any, cast
-from __future__ import annotations
-
 from datetime import datetime
-from typing import cast
 from uuid import UUID
 
 from supabase import Client
