@@ -80,3 +80,6 @@ class RepositoryError(SupabaseError):
 
 class AssessmentError(AppError):
     """Raised when the Assessment node cannot parse or validate the LLM response."""
+
+class CapabilityRegistrationError(AppError):
+    """Raised when a capability name is registered more than once."""
