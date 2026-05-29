@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal, TypedDict
-
+from uuid import UUID 
 from pydantic import BaseModel
 
 from app.models.schemas import Source
@@ -41,7 +41,6 @@ class ConversationTurn(BaseModel):
     derivation: str = ""
     created_at: datetime
 
-
 class WorkflowState(TypedDict):
     """Shared state passed between every node in the orchestrator graph.
 
@@ -50,23 +49,24 @@ class WorkflowState(TypedDict):
     so they can be serialised cleanly for storage and transport.
     """
 
-    # ── Input ────────────────────────────────────────────────────
-    query_input: str
+    # ── Session context ──────────────────────────────────────────
+    session_id: UUID | None                   
+    query: str                                     
 
     # ── Agent bookkeeping ────────────────────────────────────────
     agent_calls: list[AgentCall]
-    decomposed_tasks: list[dict[str, Any]]  # Assessment node output
+    decomposed_tasks: list[dict[str, Any]]
 
     # ── Retrieval ────────────────────────────────────────────────
-    retrieved_context: list[str]            # text chunks from Retrieve node
+    retrieved_context: list[str]
 
     # ── Conversation memory ──────────────────────────────────────
-    conversation_history: list[ConversationTurn]  # loaded by Memory Load node
+    conversation_history: list[ConversationTurn]
 
     # ── Validation ───────────────────────────────────────────────
     validation_results: list[str]
 
     # ── Synthesis output ─────────────────────────────────────────
-    sources: list[Source]   # deduplicated sources for the answer
-    derivation: str         # how the final answer was derived
-    final_output: str       # the answer returned to the user
+    sources: list[Source]
+    derivation: str
+    final_output: str
