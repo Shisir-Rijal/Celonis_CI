@@ -83,3 +83,6 @@ class AssessmentError(AppError):
 
 class CapabilityRegistrationError(AppError):
     """Raised when a capability name is registered more than once."""
+
+class SynthesisError(AppError):
+    """Raised when the Synthesize node cannot parse the LLM response."""
