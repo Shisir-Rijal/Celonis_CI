@@ -51,7 +51,6 @@ class WorkflowState(TypedDict):
     """
 
     # ── Input ────────────────────────────────────────────────────
-    query_input: str
     session_id: UUID | None # Session context (added in Issue #59)
     query: str
 

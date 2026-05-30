@@ -12,7 +12,7 @@ Issue #63: replaced dispatch stub with real dispatch, added correlation stub,
            synthesize stub, conditional edge dispatch → (correlation | synthesize)
 """
 
-from langgraph.graph import StateGraph
+from langgraph.graph import END, StateGraph
 
 from app.orchestration.nodes.agentic_retrieve import agentic_retrieve_node
 from app.orchestration.nodes.assess import assess_node
@@ -23,6 +23,7 @@ from app.orchestration.nodes.retrieve import retrieve_node
 from app.orchestration.nodes.synthesize import synthesize_node
 from app.orchestration.state import WorkflowState
 from app.orchestration.nodes.critic import critic_node
+from app.orchestration.nodes.respond import respond_node
 
 
 def _route_after_assess(state: WorkflowState) -> str:
@@ -44,6 +45,7 @@ builder.add_node("dispatch", dispatch_node)
 builder.add_node("correlation", correlation_node)
 builder.add_node("synthesize", synthesize_node)
 builder.add_node("critic", critic_node)
+builder.add_node("respond", respond_node)
 
 # ── Entry point ───────────────────────────────────────────────────────
 builder.set_entry_point("memory_load")
@@ -69,6 +71,8 @@ builder.add_conditional_edges(
     },
 )
 builder.add_edge("synthesize", "critic")
+builder.add_edge("critic", "respond")
+builder.add_edge("respond", END)
 
 # ── Compile ───────────────────────────────────────────────────────────
 orchestrator_graph = builder.compile()
