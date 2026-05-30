@@ -51,8 +51,7 @@ class WorkflowState(TypedDict):
     """
 
     # ── Input ────────────────────────────────────────────────────
-    # query_input: str  # reserved — purpose TBD
-    session_id: UUID | None
+    session_id: UUID | None # Session context (added in Issue #59)
     query: str
 
     # ── Agent bookkeeping ────────────────────────────────────────

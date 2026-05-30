@@ -1,170 +1,115 @@
-"""Chat router — POST /chat.
+"""backend/app/api/chat.py
 
-End-to-end RAG slice (Issue #11):
-  1. Retrieve relevant chunks with hybrid search.
-  2. Build a prompt via app/prompts/chat_basic.py.
-  3. Call the configured LLM.
-  4. Parse the structured reply into ChatResponse.
+Chat router — POST /chat.
+Runs the full orchestrator graph and streams progress + result via SSE.
 
-Edge cases handled here:
-  - Zero chunks retrieved  → "no sources found" answer, empty sources/derivation.
-  - LLMProviderError       → HTTP 503, no stack trace leaked.
+Supersedes the stub from Issue #11.
+Issue #66: Respond node and SSE chat endpoint — orchestrator end-to-end
 """
 
-import re
-import time
-import uuid
-
+import json
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from uuid import UUID, uuid4
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.auth.dependencies import require_auth
-from app.config import get_settings
-from app.exceptions import LLMProviderError
-from app.llm.openai_client import get_openai_client
-from app.models.schemas import ChatRequest, ChatResponse, Chunk, Source
-from app.prompts.chat_basic import build_messages
-from app.rag.retrieval import search_chunks
+from app.orchestration.graph import orchestrator_graph
+from app.orchestration.state import WorkflowState
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+# Node name → SSE phase label
+_PHASE_MAP: dict[str, str] = {
+    "retrieve": "retrieving",
+    "assess": "assessing",
+    "dispatch": "dispatching",
+}
 
-# ---------------------------------------------------------------------------
-# Response parser
-# ---------------------------------------------------------------------------
 
-def _parse_response(text: str, chunks: list[Chunk]) -> tuple[str, list[Source], str]:
-    """Split the structured LLM reply into answer, sources, and derivation.
+class ChatBody(BaseModel):
+    query: str
+    session_id: str | None = None
 
-    The model is instructed to write:
-        ANSWER:
-        <text with [uuid] citations>
 
-        DERIVATION:
-        <reasoning paragraph>
+@router.post("", dependencies=[Depends(require_auth)])
+async def chat(body: ChatBody) -> StreamingResponse:
+    """Run the orchestrator graph and stream SSE events to the client.
 
-    We extract both sections with a regex, then collect every UUID that
-    appears inside square brackets in the answer and map those back to the
-    Chunk objects we retrieved.
-
-    Args:
-        text:   Raw string returned by the LLM.
-        chunks: The retrieved chunks, used for the ID → Source mapping.
-
-    Returns:
-        (answer, sources, derivation) — answer and derivation are plain
-        strings; sources is a list of Source objects for each cited chunk.
+    Events emitted:
+      {"type": "phase", "phase": "retrieving" | "assessing" | "dispatching"}
+      {"type": "message", "answer": ..., "sources": [...], "derivation": ..., "session_id": ...}
+      {"type": "error", "message": ...}  — only on unhandled exceptions
     """
-    # ---- Split into ANSWER / DERIVATION sections -------------------------
-    answer_match = re.search(
-        r"ANSWER:\s*(.*?)(?=DERIVATION:|$)", text, re.DOTALL | re.IGNORECASE
-    )
-    deriv_match = re.search(
-        r"DERIVATION:\s*(.*?)$", text, re.DOTALL | re.IGNORECASE
-    )
-
-    answer = answer_match.group(1).strip() if answer_match else text.strip()
-    derivation = deriv_match.group(1).strip() if deriv_match else ""
-
-    # ---- Find cited chunk IDs in the answer section ----------------------
-    # UUIDs look like: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-    cited_ids: set[str] = set(
-        re.findall(r"\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]", answer)
+    session_id: UUID = UUID(body.session_id) if body.session_id else uuid4()
+    logger.info(
+        "chat_request_received",
+        query_length=len(body.query),
+        session_id=str(session_id),
     )
 
-    # ---- Map cited IDs → Source objects ----------------------------------
-    chunk_by_id = {str(c.id): c for c in chunks}
-    sources: list[Source] = [
-        Source(
-            url=chunk_by_id[cid].metadata.url,
-            title=chunk_by_id[cid].metadata.title,
-            relevance_score=chunk_by_id[cid].relevance_score or 0.0,
-        )
-        for cid in cited_ids
-        if cid in chunk_by_id
-    ]
+    initial_state: WorkflowState = {
+        "session_id": session_id,
+        "query": body.query,
+        "agent_calls": [],
+        "decomposed_tasks": [],
+        "retrieved_context": [],
+        "conversation_history": [],
+        "validation_results": [],
+        "sources": [],
+        "derivation": "",
+        "final_output": "",
+        "retrieval_mode": "standard",
+        "discovery_query": None,
+    }
 
-    # Sort by relevance descending so the frontend can render them in order.
-    sources.sort(key=lambda s: s.relevance_score, reverse=True)
+    async def event_stream():
+        final_answer = ""
+        final_sources: list = []
+        final_derivation = ""
 
-    return answer, sources, derivation
+        try:
+            async for event in orchestrator_graph.astream_events(
+                initial_state, version="v2"
+            ):
+                evt_type: str = event["event"]
+                evt_name: str = event.get("name", "")
 
+                # Phase events: emit when a node starts
+                if evt_type == "on_chain_start":
+                    phase = _PHASE_MAP.get(evt_name)
+                    if phase:
+                        payload = {"type": "phase", "phase": phase}
+                        yield f"data: {json.dumps(payload)}\n\n"
 
-# ---------------------------------------------------------------------------
-# Route
-# ---------------------------------------------------------------------------
+                # Capture final answer when synthesize completes
+                elif evt_type == "on_chain_end" and evt_name == "synthesize":
+                    output = event["data"].get("output", {})
+                    final_answer = output.get("final_output", "")
+                    final_derivation = output.get("derivation", "")
+                    raw_sources = output.get("sources", [])
+                    final_sources = [
+                        s.model_dump() if hasattr(s, "model_dump") else s
+                        for s in raw_sources
+                    ]
 
-@router.post("", response_model=ChatResponse, dependencies=[Depends(require_auth)])
-async def chat(request: ChatRequest) -> ChatResponse:
-    """Accept a user query and return a grounded answer with source citations.
+            # Graph completed — emit final message
+            message_payload = {
+                "type": "message",
+                "answer": final_answer,
+                "sources": final_sources,
+                "derivation": final_derivation,
+                "session_id": str(session_id),
+            }
+            yield f"data: {json.dumps(message_payload)}\n\n"
 
-    Args:
-        request: Validated body containing ``query``.
+        except Exception as exc:
+            logger.error("chat_graph_error", error=str(exc))
+            error_payload = {"type": "error", "message": str(exc)}
+            yield f"data: {json.dumps(error_payload)}\n\n"
 
-    Returns:
-        ChatResponse with answer, cited sources, and a derivation string.
-        If no chunks are found, returns a clear "no sources" message with
-        empty sources and derivation.
-
-    Raises:
-        HTTPException(503): When the LLM provider fails after all retries.
-    """
-    correlation_id = str(uuid.uuid4())
-    log = logger.bind(correlation_id=correlation_id)
-
-    # ------------------------------------------------------------------
-    # 1. Retrieve relevant chunks.
-    # ------------------------------------------------------------------
-    t0 = time.perf_counter()
-    chunks = await search_chunks(request.query)
-    retrieval_ms = int((time.perf_counter() - t0) * 1000)
-
-    chunk_ids = [str(c.id) for c in chunks]
-    log.info(
-        "chunks_retrieved",
-        query=request.query,
-        chunk_ids=chunk_ids,
-        latency_ms=retrieval_ms,
-    )
-
-    # ------------------------------------------------------------------
-    # 2. No-sources fast path.
-    # ------------------------------------------------------------------
-    if not chunks:
-        log.info("no_sources_found", query=request.query)
-        return ChatResponse(
-            answer="No relevant sources were found for your query.",
-            sources=[],
-            derivation="",
-        )
-
-    # ------------------------------------------------------------------
-    # 3. Build prompt and call the LLM.
-    # ------------------------------------------------------------------
-    settings = get_settings()
-    messages = build_messages(request.query, chunks)
-
-    try:
-        t1 = time.perf_counter()
-        raw = await get_openai_client().complete(messages)
-        llm_ms = int((time.perf_counter() - t1) * 1000)
-        log.info(
-            "llm_complete",
-            model=settings.OPENAI_CHAT_MODEL,
-            latency_ms=llm_ms,
-        )
-    except LLMProviderError as exc:
-        log.error("llm_error", error=str(exc))
-        raise HTTPException(
-            status_code=503,
-            detail="LLM provider unavailable. Please try again later.",
-        )
-
-    # ------------------------------------------------------------------
-    # 4. Parse the structured reply.
-    # ------------------------------------------------------------------
-    answer, sources, derivation = _parse_response(raw, chunks)
-
-    return ChatResponse(answer=answer, sources=sources, derivation=derivation)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

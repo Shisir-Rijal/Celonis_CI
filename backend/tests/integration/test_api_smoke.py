@@ -90,3 +90,10 @@ async def test_root_returns_service_identity() -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert "service" in body
+
+class TestOrchestratorSmoke:
+    def test_graph_compiles_and_is_importable(self) -> None:
+        """Full orchestrator graph compiles end-to-end and is importable."""
+        from app.orchestration.graph import orchestrator_graph
+
+        assert orchestrator_graph is not None
