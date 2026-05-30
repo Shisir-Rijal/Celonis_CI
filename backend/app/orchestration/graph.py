@@ -54,6 +54,7 @@ builder.set_entry_point("memory_load")
 # ── Edges ─────────────────────────────────────────────────────────────
 builder.add_edge("memory_load", "retrieve")
 builder.add_edge("retrieve", "assess")
+builder.add_edge("correlation", "synthesize")
 builder.add_conditional_edges(
     "assess",
     _route_after_assess,
