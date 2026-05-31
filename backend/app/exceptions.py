@@ -74,3 +74,6 @@ class ChunkingError(IngestionError):
 
 class SupabaseError(AppError):
     """Raised when a Supabase read or write operation fails."""
+
+class RepositoryError(SupabaseError):
+    """Raised when a repository-level database operation fails."""
