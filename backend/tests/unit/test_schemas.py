@@ -178,31 +178,4 @@ class TestChunkRoundTrip:
         assert restored == original
 
 
-# ---------------------------------------------------------------------------
-# WorkflowState — defaults and construction
-# ---------------------------------------------------------------------------
 
-class TestWorkflowState:
-    def test_defaults_are_empty(self):
-        state = WorkflowState(query_input="Who is SAP's main competitor?")
-        assert state.intermediate_agent_outputs == []
-        assert state.retrieved_context == []
-        assert state.validation_results == []
-        assert state.final_output == ""
-
-    def test_retrieved_context_accepts_chunks(self):
-        chunk = Chunk(**make_chunk())
-        state = WorkflowState(
-            query_input="test query",
-            retrieved_context=[chunk],
-        )
-        assert len(state.retrieved_context) == 1
-        assert state.retrieved_context[0].content == chunk.content
-
-    def test_invalid_chunk_in_context_raises(self):
-        """WorkflowState validates nested Chunks."""
-        with pytest.raises(ValidationError):
-            WorkflowState(
-                query_input="test",
-                retrieved_context=[{"id": "not-a-uuid", "content": 123}],
-            )
