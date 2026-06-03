@@ -7,6 +7,7 @@ need it.
 """
 
 import pytest
+from unittest.mock import AsyncMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
@@ -36,14 +37,15 @@ async def test_health_returns_healthy() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_stub_accepts_query(auth_token: str) -> None:
+async def test_chat_accepts_query(auth_token: str) -> None:
     """POST /chat with a valid token must return ChatResponse shape."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/chat",
-            json={"query": "Who is SAP?"},
-            headers={"Authorization": f"Bearer {auth_token}"},
-        )
+    with patch("app.api.chat.search_chunks", new=AsyncMock(return_value=[])):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/chat",
+                json={"query": "Who is SAP?"},
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
 
     assert response.status_code == 200
     body = response.json()
