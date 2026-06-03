@@ -11,8 +11,6 @@ Covers:
 
 from datetime import datetime, timezone
 
-import pytest
-
 from app.ingestion.chunking.none_enriched import chunk_none_enriched
 from app.models.schemas import Chunk, ChunkMetadata
 
