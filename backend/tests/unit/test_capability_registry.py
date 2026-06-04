@@ -94,3 +94,17 @@ def test_duplicate_name_raises_capability_registration_error() -> None:
         )
         async def second_fn(params: dict):
             pass
+
+def test_registering_sync_function_raises() -> None:
+    """Registering a synchronous function raises CapabilityRegistrationError."""
+
+    with pytest.raises(CapabilityRegistrationError, match="async"):
+
+        @register_capability(
+            name="sync_cap",
+            description="A sync function",
+            input_schema={},
+            output_schema={},
+        )
+        def sync_fn(params: dict):  # not async
+            pass

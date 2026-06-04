@@ -6,7 +6,7 @@ Assessment reads the list; Dispatch looks up callables by name.
 
 Issue #62: Capability Registry — @register_capability decorator and dynamic lookup
 """
-
+import inspect
 from collections.abc import Callable
 
 from app.exceptions import CapabilityRegistrationError
@@ -37,6 +37,11 @@ def register_capability(
         CapabilityRegistrationError: If a capability with this name is already registered.
     """
     def decorator(fn: Callable) -> Callable:
+        if not inspect.iscoroutinefunction(fn):         
+            raise CapabilityRegistrationError(          
+                f"Capability '{name}' must be an async function. " 
+                f"Got synchronous function {fn.__name__!r}."        
+            )                                           
         if name in _REGISTRY:
             raise CapabilityRegistrationError(
                 f"Capability '{name}' is already registered. "

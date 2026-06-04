@@ -30,6 +30,11 @@ def _route_after_assess(state: WorkflowState) -> str:
 # ── Build graph ───────────────────────────────────────────────────────
 builder = StateGraph(WorkflowState)
 
+# ── Capability modules ────────────────────────────────────────────────
+# TODO: import capability modules here at startup so they self-register via
+# @register_capability before the graph is first invoked — see Issue #62.
+# e.g. import app.agents.wording_analysis  # noqa: F401
+
 # ── Nodes ─────────────────────────────────────────────────────────────
 builder.add_node("memory_load", memory_load_node)
 builder.add_node("retrieve", retrieve_node)
