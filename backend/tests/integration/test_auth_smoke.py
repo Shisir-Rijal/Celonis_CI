@@ -62,7 +62,7 @@ async def test_chat_with_invalid_token_returns_401() -> None:
 
 @pytest.mark.asyncio
 async def test_full_login_then_chat_flow() -> None:
-    """Login → use returned token → POST /chat succeeds."""
+    """Login → use returned token → POST /chat returns SSE stream."""
     from app.config import get_settings
     password = get_settings().APP_PASSWORD
 
@@ -80,9 +80,8 @@ async def test_full_login_then_chat_flow() -> None:
         )
 
     assert chat_response.status_code == 200
-    body = chat_response.json()
-    assert "answer" in body
-    assert "sources" in body
+    assert "text/event-stream" in chat_response.headers.get("content-type", "")
+    assert "data:" in chat_response.text
 
 
 @pytest.mark.asyncio

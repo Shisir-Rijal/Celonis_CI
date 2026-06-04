@@ -7,6 +7,7 @@ Issue #66: Respond node and SSE chat endpoint — orchestrator end-to-end
 """
 
 import structlog
+import asyncio
 
 from app.orchestration.memory import save_turn
 from app.orchestration.state import WorkflowState
@@ -26,7 +27,8 @@ async def respond_node(state: WorkflowState) -> dict:
         return {}
 
     try:
-        save_turn(
+        await asyncio.to_thread(
+            save_turn,
             session_id=session_id,
             query=state["query"],
             answer=state["final_output"],

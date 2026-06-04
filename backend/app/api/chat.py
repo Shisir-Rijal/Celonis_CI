@@ -19,6 +19,8 @@ from app.auth.dependencies import require_auth
 from app.orchestration.graph import orchestrator_graph
 from app.orchestration.state import WorkflowState
 
+from collections.abc import AsyncGenerator
+
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -67,7 +69,7 @@ async def chat(body: ChatBody) -> StreamingResponse:
         "discovery_query": None,
     }
 
-    async def event_stream():
+    async def event_stream()-> AsyncGenerator[str, None]:
         final_answer = ""
         final_sources: list = []
         final_derivation = ""

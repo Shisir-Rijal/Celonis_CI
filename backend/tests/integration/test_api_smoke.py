@@ -37,21 +37,18 @@ async def test_health_returns_healthy() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_accepts_query(auth_token: str) -> None:
-    """POST /chat with a valid token must return ChatResponse shape."""
-    with patch("app.api.chat.search_chunks", new=AsyncMock(return_value=[])):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/chat",
-                json={"query": "Who is SAP?"},
-                headers={"Authorization": f"Bearer {auth_token}"},
-            )
+async def test_chat_stub_accepts_query(auth_token: str) -> None:
+    """POST /chat with a valid token returns an SSE stream."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/chat",
+            json={"query": "Who is SAP?"},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
 
     assert response.status_code == 200
-    body = response.json()
-    assert "answer" in body
-    assert "sources" in body
-    assert isinstance(body["sources"], list)
+    assert "text/event-stream" in response.headers.get("content-type", "")
+    assert "data:" in response.text
 
 
 @pytest.mark.asyncio
