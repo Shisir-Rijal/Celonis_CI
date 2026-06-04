@@ -44,6 +44,8 @@ builder.add_node("memory_load", memory_load_node)
 builder.add_node("retrieve", retrieve_node)
 builder.add_node("assess", assess_node)
 builder.add_node("agentic_retrieve", agentic_retrieve_node)
+# TODO: add edge agentic_retrieve → dispatch (Phase 2) so the agentic path
+# completes end-to-end. Currently the graph terminates after agentic_retrieve.
 builder.add_node("dispatch", dispatch_node)
 builder.add_node("correlation", correlation_node)
 builder.add_node("synthesize", synthesize_node)

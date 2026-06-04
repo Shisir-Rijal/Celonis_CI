@@ -8,7 +8,7 @@ Issue #64: Synthesize node — assemble final answer, sources, and derivation
 
 import json as _json
 
-from app.orchestration.state import AgentCall
+from app.orchestration.state import AgentCall, ConversationTurn
 
 # ── System prompts ────────────────────────────────────────────────────
 
@@ -49,13 +49,21 @@ Respond with JSON only — no markdown, no explanation outside the JSON.\
 def build_no_capabilities_messages(
     query: str,
     retrieved_context: list[str],
+    conversation_history: list[ConversationTurn],
 ) -> list[dict]:
     """Messages for the 0-successful-calls case: answer from retrieved context."""
     context_text = "\n\n".join(
         f"[{i + 1}] {chunk[:500]}" for i, chunk in enumerate(retrieved_context[:5])
     ) or "(no retrieved context)"
 
+    recent = conversation_history[-3:] if conversation_history else []
+    turns_text = (
+        "\n".join(f"{t.role.upper()}: {t.content}" for t in recent)
+        if recent else "(no prior conversation)"
+    )
+
     user_content = (
+        f"CONVERSATION HISTORY (last 3 turns):\n{turns_text}\n\n"
         f"QUERY: {query}\n\n"
         f"RETRIEVED CONTEXT:\n{context_text}\n\n"
         f"Respond with JSON only."
@@ -69,10 +77,19 @@ def build_no_capabilities_messages(
 def build_single_capability_messages(
     query: str,
     call: AgentCall,
+    conversation_history: list[ConversationTurn],
 ) -> list[dict]:
     """Messages for the 1-successful-call case."""
     output_json = _json.dumps(call.output, default=str)
+
+    recent = conversation_history[-3:] if conversation_history else []
+    turns_text = (
+        "\n".join(f"{t.role.upper()}: {t.content}" for t in recent)
+        if recent else "(no prior conversation)"
+    )
+
     user_content = (
+        f"CONVERSATION HISTORY (last 3 turns):\n{turns_text}\n\n"
         f"QUERY: {query}\n\n"
         f"CAPABILITY: {call.capability}\n"
         f"OUTPUT:\n{output_json}\n"
@@ -88,6 +105,7 @@ def build_single_capability_messages(
 def build_multi_capability_messages(
     query: str,
     calls: list[AgentCall],
+    conversation_history: list[ConversationTurn],
 ) -> list[dict]:
     """Messages for the 2+-successful-calls case (Writer role)."""
     outputs = []
@@ -100,7 +118,14 @@ def build_multi_capability_messages(
         )
     outputs_text = "\n\n".join(outputs)
 
+    recent = conversation_history[-3:] if conversation_history else []
+    turns_text = (
+        "\n".join(f"{t.role.upper()}: {t.content}" for t in recent)
+        if recent else "(no prior conversation)"
+    )
+
     user_content = (
+        f"CONVERSATION HISTORY (last 3 turns):\n{turns_text}\n\n"
         f"QUERY: {query}\n\n"
         f"CAPABILITY OUTPUTS:\n{outputs_text}\n\n"
         f"Respond with JSON only."
