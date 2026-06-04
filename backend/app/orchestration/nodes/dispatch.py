@@ -54,6 +54,11 @@ async def dispatch_node(state: WorkflowState) -> dict:
         for attempt in range(3):
             try:
                 result = await fn(params)
+                if not isinstance(result, AgentCall): 
+                    raise TypeError(
+                        f"Capability '{name}' must return an AgentCall, "
+                        f"got {type(result).__name__!r}."
+                    )  
                 last_error = None
                 break
             except Exception as exc:

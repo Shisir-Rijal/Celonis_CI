@@ -70,6 +70,8 @@ builder.add_conditional_edges(
         "synthesize": "synthesize",
     },
 )
+# TODO: add edge correlation → synthesize once Synthesize node is
+# implemented in Issue #64. Without it the graph halts after correlation.
 
 # ── Compile ───────────────────────────────────────────────────────────
 orchestrator_graph = builder.compile()
