@@ -42,7 +42,8 @@ def build_messages(query: str, chunks: list[Chunk]) -> list[dict]:
         to ChatClient.complete().
     """
     source_lines = "\n\n".join(
-        f"[{chunk.id}]\n{chunk.content}" for chunk in chunks
+        f"[{chunk.id}]\n{(chunk.context_header + chr(10)) if chunk.context_header else ''}{chunk.content}"
+        for chunk in chunks
     )
 
     user_content = f"Sources:\n{source_lines}\n\nQuestion: {query}"
