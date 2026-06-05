@@ -1,0 +1,94 @@
+"""
+Agentic chunking strategy for longer, high-value content.
+
+Instead of splitting by tokens or headings, the text is sent to an LLM
+(for now GPT-4o-mini) -> identifies sections and writes a one-sentence summary for each. 
+The summary is addedd to the section content so the embedding captures both the gist and the detail.
+
+Uses the ChatClient abstraction layer, not directly OpenAI.
+"""
+import json
+import uuid
+from datetime import datetime, timezone
+
+# app/exceptions.py — raised when LLM returns unusable output
+from app.exceptions import ChunkingError
+# app/llm/base.py —> abstract interface
+from app.llm.base import ChatClient
+# app/models/schemas.py —> shared data models
+from app.models.schemas import Chunk, ChunkMetadata
+# structural.py: used for fallback splitting when LLM returns an oversized section
+from app.ingestion.chunking.structural import _count_tokens, _split_by_tokens
+from app.ingestion.chunking.entity_extractor import extract_entities
+from app.ingestion.chunking._utils import build_context_header
+
+_MAX_TOKENS = 800   # fallback —> same default as structural
+_OVERLAP_TOKENS = 80
+
+_SYSTEM_PROMPT = """
+You are a document segmentation assistant. 
+Split the provided text into semantically coherent sections.
+
+For each section return:
+- "summary": one sentence describing what this section covers
+- "content": the verbatim text of this section (no changes, no omissions)
+
+Respond with valid JSON in this exact format:
+{"sections": [{"summary": "...", "content": "..."}, ...]}
+
+Rules:
+- Keep each section between 2 and 10 paragraphs
+- Never omit or alter any part of the original text
+- Never merge unrelated topics into one section"""
+
+
+async def chunk_agentic(
+    text: str,
+    metadata: ChunkMetadata,
+    client: ChatClient,
+) -> list[Chunk]:
+    """Send text to LLM for semantic segmentation; return one Chunk per section."""
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": text},
+    ]
+
+    # response_format forces valid JSON output
+    response = await client.complete(messages, response_format={"type": "json_object"})
+
+    try:
+        sections = json.loads(response)["sections"]
+    except (json.JSONDecodeError, KeyError) as exc:
+        raise ChunkingError(f"Agentic chunker received invalid JSON from LLM: {exc}") from exc
+
+    now = datetime.now(timezone.utc)
+    doc_header = build_context_header(metadata)
+
+    # Each item: (context_header, content)
+    # Post-process: if the LLM returned an oversized section, split it with a token window.
+    # Only the first sub-chunk keeps the LLM summary as context_header; the rest fall back to doc_header.
+    chunk_pairs: list[tuple[str, str]] = []
+    for section in sections:
+        content = section["content"]
+        summary = section["summary"]
+        if _count_tokens(content) > _MAX_TOKENS:
+            sub_chunks = _split_by_tokens(content, _MAX_TOKENS, _OVERLAP_TOKENS)
+            chunk_pairs.append((summary, sub_chunks[0]))
+            chunk_pairs.extend((doc_header, sub_chunk) for sub_chunk in sub_chunks[1:])
+        else:
+            chunk_pairs.append((summary, content))
+
+    return [
+        Chunk(
+            id=uuid.uuid4(),
+            content=chunk_content,
+            context_header=chunk_context_header,
+            metadata=metadata.model_copy(update={
+                "chunking_strategy": "agentic",
+                "entities": extract_entities(chunk_content),
+            }),
+            embedding=None,
+            created_at=now,
+        )
+        for chunk_context_header, chunk_content in chunk_pairs
+    ]
