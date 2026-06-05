@@ -19,6 +19,7 @@ from app.llm.base import ChatClient
 from app.models.schemas import Chunk, ChunkMetadata
 # structural.py: used for fallback splitting when LLM returns an oversized section
 from app.ingestion.chunking.structural import _count_tokens, _split_by_tokens
+from app.ingestion.chunking._utils import build_context_header
 
 _MAX_TOKENS = 800   # fallback —> same default as structural
 _OVERLAP_TOKENS = 80
@@ -62,6 +63,7 @@ async def chunk_agentic(
     now = datetime.now(timezone.utc)
     # model_copy(): Pydantic method —> clones metadata and overrides one field
     chunk_meta = metadata.model_copy(update={"chunking_strategy": "agentic"})
+    header = build_context_header(metadata)
 
     # Post-process: if the LLM returned an oversized section, split it with a token window.
     # Only the first sub-chunk keeps the summary.
@@ -71,10 +73,10 @@ async def chunk_agentic(
         summary = section["summary"]
         if _count_tokens(content) > _MAX_TOKENS:
             sub_chunks = _split_by_tokens(content, _MAX_TOKENS, _OVERLAP_TOKENS)
-            chunk_texts.append(f"{summary}\n\n{sub_chunks[0]}")
-            chunk_texts.extend(sub_chunks[1:])
+            chunk_texts.append(f"{header}\n\n{summary}\n\n{sub_chunks[0]}")
+            chunk_texts.extend(f"{header}\n\n{sub_chunk}" for sub_chunk in sub_chunks[1:])
         else:
-            chunk_texts.append(f"{summary}\n\n{content}")
+            chunk_texts.append(f"{header}\n\n{summary}\n\n{content}")
 
     return [
         Chunk(

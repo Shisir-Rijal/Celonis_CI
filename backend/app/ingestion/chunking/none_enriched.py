@@ -17,20 +17,13 @@ If title is absent the Title field is omitted from the header.
 import uuid
 from datetime import datetime, timezone
 
+from app.ingestion.chunking._utils import build_context_header
 from app.models.schemas import Chunk, ChunkMetadata
 
 
 def chunk_none_enriched(text: str, metadata: ChunkMetadata) -> list[Chunk]:
     """Return the full text as a single chunk with a context header prepended."""
-    header_parts = [
-        f"Company: {metadata.company}",
-        f"Type: {metadata.source_type}",
-        f"Date: {metadata.date.strftime('%Y-%m-%d')}",
-    ]
-    if metadata.title:
-        header_parts.append(f"Title: {metadata.title}")
-
-    header = " | ".join(header_parts)
+    header = build_context_header(metadata)
     enriched_content = f"{header}\n\n{text}"
 
     chunk_meta = metadata.model_copy(update={"chunking_strategy": "none"})

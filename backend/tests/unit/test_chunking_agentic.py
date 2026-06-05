@@ -66,7 +66,9 @@ class TestAgenticContract:
             {"summary": "Summary here", "content": "Content here."},
         ])
         chunks = await chunk_agentic(TEXT, make_metadata(), make_client(response))
-        assert chunks[0].content == "Summary here\n\nContent here."
+        # Header is prepended; body starts after the first "\n\n"
+        body = chunks[0].content.split("\n\n", 1)[1]
+        assert body == "Summary here\n\nContent here."
 
 
 # ---------------------------------------------------------------------------
