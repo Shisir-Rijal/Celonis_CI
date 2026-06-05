@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 import tiktoken
 
 from app.ingestion.chunking._utils import build_context_header
+from app.ingestion.chunking.entity_extractor import extract_entities
 from app.models.schemas import Chunk, ChunkMetadata
 
 _ENCODING = tiktoken.get_encoding("cl100k_base")
@@ -92,14 +93,16 @@ def chunk_structural(
             chunk_texts.extend(_split_by_tokens(section, max_tokens, overlap_tokens))
 
     now = datetime.now(timezone.utc)
-    chunk_meta = metadata.model_copy(update={"chunking_strategy": "structural"})
     header = build_context_header(metadata)
 
     return [
         Chunk(
             id=uuid.uuid4(),
             content=f"{header}\n\n{chunk_text}",
-            metadata=chunk_meta,
+            metadata=metadata.model_copy(update={
+                "chunking_strategy": "structural",
+                "entities": extract_entities(chunk_text),
+            }),
             embedding=None,
             created_at=now,
         )

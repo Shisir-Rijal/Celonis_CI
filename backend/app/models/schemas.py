@@ -16,6 +16,7 @@ class ChunkMetadata(BaseModel):
     content_type: Literal["text", "image", "transcript"]
     visual_type: str | None
     chunking_strategy: Literal["structural", "none", "agentic"]
+    entities: list[str] = []
 
 class Chunk(BaseModel):
     """this class defines a chunk of content, including its unique identifier, the content itself, its metadata, an optional embedding vector, and the date it was created."""

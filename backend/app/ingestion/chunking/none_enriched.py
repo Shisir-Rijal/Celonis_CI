@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.ingestion.chunking._utils import build_context_header
+from app.ingestion.chunking.entity_extractor import extract_entities
 from app.models.schemas import Chunk, ChunkMetadata
 
 
@@ -26,7 +27,10 @@ def chunk_none_enriched(text: str, metadata: ChunkMetadata) -> list[Chunk]:
     header = build_context_header(metadata)
     enriched_content = f"{header}\n\n{text}"
 
-    chunk_meta = metadata.model_copy(update={"chunking_strategy": "none"})
+    chunk_meta = metadata.model_copy(update={
+        "chunking_strategy": "none",
+        "entities": extract_entities(text),
+    })
 
     return [
         Chunk(

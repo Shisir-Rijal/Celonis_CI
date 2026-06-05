@@ -19,6 +19,7 @@ from app.llm.base import ChatClient
 from app.models.schemas import Chunk, ChunkMetadata
 # structural.py: used for fallback splitting when LLM returns an oversized section
 from app.ingestion.chunking.structural import _count_tokens, _split_by_tokens
+from app.ingestion.chunking.entity_extractor import extract_entities
 from app.ingestion.chunking._utils import build_context_header
 
 _MAX_TOKENS = 800   # fallback —> same default as structural
@@ -61,8 +62,6 @@ async def chunk_agentic(
         raise ChunkingError(f"Agentic chunker received invalid JSON from LLM: {exc}") from exc
 
     now = datetime.now(timezone.utc)
-    # model_copy(): Pydantic method —> clones metadata and overrides one field
-    chunk_meta = metadata.model_copy(update={"chunking_strategy": "agentic"})
     header = build_context_header(metadata)
 
     # Post-process: if the LLM returned an oversized section, split it with a token window.
@@ -80,9 +79,12 @@ async def chunk_agentic(
 
     return [
         Chunk(
-            id=uuid.uuid4(),  # uuid4() generates a random unique ID (stdlib)
+            id=uuid.uuid4(),
             content=chunk_text,
-            metadata=chunk_meta,
+            metadata=metadata.model_copy(update={
+                "chunking_strategy": "agentic",
+                "entities": extract_entities(chunk_text),
+            }),
             embedding=None,
             created_at=now,
         )
