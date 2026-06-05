@@ -23,10 +23,7 @@ from app.models.schemas import Chunk, ChunkMetadata
 
 
 def chunk_none_enriched(text: str, metadata: ChunkMetadata) -> list[Chunk]:
-    """Return the full text as a single chunk with a context header prepended."""
-    header = build_context_header(metadata)
-    enriched_content = f"{header}\n\n{text}"
-
+    """Return the full text as a single chunk with context_header populated from metadata."""
     chunk_meta = metadata.model_copy(update={
         "chunking_strategy": "none",
         "entities": extract_entities(text),
@@ -35,7 +32,8 @@ def chunk_none_enriched(text: str, metadata: ChunkMetadata) -> list[Chunk]:
     return [
         Chunk(
             id=uuid.uuid4(),
-            content=enriched_content,
+            content=text,
+            context_header=build_context_header(metadata),
             metadata=chunk_meta,
             embedding=None,
             created_at=datetime.now(timezone.utc),

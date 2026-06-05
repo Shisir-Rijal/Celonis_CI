@@ -22,6 +22,7 @@ class Chunk(BaseModel):
     """this class defines a chunk of content, including its unique identifier, the content itself, its metadata, an optional embedding vector, and the date it was created."""
     id: UUID
     content: str
+    context_header: str
     metadata: ChunkMetadata
     embedding: list[float] | None
     created_at: datetime | None

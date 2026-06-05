@@ -1,9 +1,10 @@
 """Smoke tests for app/ingestion/chunking/agentic.py.
 
 Mocks the LLM client to verify the contract without hitting a real model:
-- One Chunk per LLM-identified section, content formatted as "summary\n\ncontent"
+- One Chunk per LLM-identified section
+- context_header is the LLM-generated summary; content is the verbatim section text
 - Invalid LLM output raises ChunkingError
-- Oversized sections fall back to token windowing; only first sub-chunk keeps the summary
+- Oversized sections fall back to token windowing; only first sub-chunk keeps the summary as context_header
 """
 
 import json
@@ -61,14 +62,19 @@ class TestAgenticContract:
         chunks = await chunk_agentic(TEXT, make_metadata(), make_client(response))
         assert len(chunks) == 2
 
-    async def test_chunk_content_is_summary_then_content(self):
+    async def test_context_header_is_summary(self):
         response = llm_response([
             {"summary": "Summary here", "content": "Content here."},
         ])
         chunks = await chunk_agentic(TEXT, make_metadata(), make_client(response))
-        # Header is prepended; body starts after the first "\n\n"
-        body = chunks[0].content.split("\n\n", 1)[1]
-        assert body == "Summary here\n\nContent here."
+        assert chunks[0].context_header == "Summary here"
+
+    async def test_content_is_verbatim_section_text(self):
+        response = llm_response([
+            {"summary": "Summary here", "content": "Content here."},
+        ])
+        chunks = await chunk_agentic(TEXT, make_metadata(), make_client(response))
+        assert chunks[0].content == "Content here."
 
 
 # ---------------------------------------------------------------------------
@@ -118,9 +124,9 @@ class TestAgenticOversizedFallback:
         chunks = await chunk_agentic(TEXT, make_metadata(), make_client(response))
         assert len(chunks) > 1
 
-    async def test_only_first_sub_chunk_has_summary(self):
+    async def test_only_first_sub_chunk_has_summary_as_context_header(self):
         long_content = ("word " * 900).strip()
         response = llm_response([{"summary": "Long section", "content": long_content}])
         chunks = await chunk_agentic(TEXT, make_metadata(), make_client(response))
-        assert "Long section" in chunks[0].content
-        assert "Long section" not in chunks[1].content
+        assert chunks[0].context_header == "Long section"
+        assert chunks[1].context_header != "Long section"

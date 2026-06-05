@@ -62,31 +62,33 @@ async def chunk_agentic(
         raise ChunkingError(f"Agentic chunker received invalid JSON from LLM: {exc}") from exc
 
     now = datetime.now(timezone.utc)
-    header = build_context_header(metadata)
+    doc_header = build_context_header(metadata)
 
+    # Each item: (context_header, content)
     # Post-process: if the LLM returned an oversized section, split it with a token window.
-    # Only the first sub-chunk keeps the summary.
-    chunk_texts: list[str] = []
+    # Only the first sub-chunk keeps the LLM summary as context_header; the rest fall back to doc_header.
+    chunk_pairs: list[tuple[str, str]] = []
     for section in sections:
         content = section["content"]
         summary = section["summary"]
         if _count_tokens(content) > _MAX_TOKENS:
             sub_chunks = _split_by_tokens(content, _MAX_TOKENS, _OVERLAP_TOKENS)
-            chunk_texts.append(f"{header}\n\n{summary}\n\n{sub_chunks[0]}")
-            chunk_texts.extend(f"{header}\n\n{sub_chunk}" for sub_chunk in sub_chunks[1:])
+            chunk_pairs.append((summary, sub_chunks[0]))
+            chunk_pairs.extend((doc_header, sub_chunk) for sub_chunk in sub_chunks[1:])
         else:
-            chunk_texts.append(f"{header}\n\n{summary}\n\n{content}")
+            chunk_pairs.append((summary, content))
 
     return [
         Chunk(
             id=uuid.uuid4(),
-            content=chunk_text,
+            content=chunk_content,
+            context_header=chunk_context_header,
             metadata=metadata.model_copy(update={
                 "chunking_strategy": "agentic",
-                "entities": extract_entities(chunk_text),
+                "entities": extract_entities(chunk_content),
             }),
             embedding=None,
             created_at=now,
         )
-        for chunk_text in chunk_texts
+        for chunk_context_header, chunk_content in chunk_pairs
     ]

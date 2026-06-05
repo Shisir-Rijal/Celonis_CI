@@ -59,6 +59,12 @@ def _merge_short_sections(sections: list[str], min_tokens: int) -> list[str]:
     return merged
 
 
+def _extract_heading(text: str) -> str | None:
+    """Return the first Markdown heading line from text, or None if absent."""
+    first_line = text.lstrip().split("\n", 1)[0]
+    return first_line if re.match(r"^#{1,6}\s", first_line) else None
+
+
 def _split_by_tokens(text: str, max_tokens: int, overlap: int) -> list[str]:
     """Split text that exceeds max_tokens into windows with overlap."""
     tokens = _ENCODING.encode(text)
@@ -93,12 +99,17 @@ def chunk_structural(
             chunk_texts.extend(_split_by_tokens(section, max_tokens, overlap_tokens))
 
     now = datetime.now(timezone.utc)
-    header = build_context_header(metadata)
+    doc_header = build_context_header(metadata)
+
+    def _make_context_header(chunk_text: str) -> str:
+        heading = _extract_heading(chunk_text)
+        return f"{heading} | {doc_header}" if heading else doc_header
 
     return [
         Chunk(
             id=uuid.uuid4(),
-            content=f"{header}\n\n{chunk_text}",
+            content=chunk_text,
+            context_header=_make_context_header(chunk_text),
             metadata=metadata.model_copy(update={
                 "chunking_strategy": "structural",
                 "entities": extract_entities(chunk_text),

@@ -2,9 +2,9 @@
 
 Covers:
 - Always returns exactly one Chunk
-- Header format: "Company: X | Type: Y | Date: YYYY-MM-DD | Title: T"
-- Title is omitted from header when metadata.title is None
-- Original text is preserved in chunk content
+- context_header format: "Company: X | Type: Y | Date: YYYY-MM-DD | Title: T"
+- Title is omitted from context_header when metadata.title is None
+- content contains only the original raw text (no header baked in)
 - chunking_strategy is set to "none"
 - Returned object is a valid Chunk instance with populated metadata
 """
@@ -63,39 +63,37 @@ class TestNoneEnrichedOutputShape:
 
 
 # ---------------------------------------------------------------------------
-# Header format
+# context_header format
 # ---------------------------------------------------------------------------
 
 class TestNoneEnrichedHeaderFormat:
-    def test_header_contains_company(self):
+    def test_context_header_contains_company(self):
         chunk = chunk_none_enriched(SAMPLE_TEXT, make_metadata())[0]
-        assert "Company: Celonis" in chunk.content
+        assert "Company: Celonis" in chunk.context_header
 
-    def test_header_contains_source_type(self):
+    def test_context_header_contains_source_type(self):
         chunk = chunk_none_enriched(SAMPLE_TEXT, make_metadata())[0]
-        assert "Type: social" in chunk.content
+        assert "Type: social" in chunk.context_header
 
-    def test_header_contains_date(self):
+    def test_context_header_contains_date(self):
         chunk = chunk_none_enriched(SAMPLE_TEXT, make_metadata())[0]
-        assert "Date: 2025-03-15" in chunk.content
+        assert "Date: 2025-03-15" in chunk.context_header
 
-    def test_header_contains_title(self):
+    def test_context_header_contains_title(self):
         chunk = chunk_none_enriched(SAMPLE_TEXT, make_metadata())[0]
-        assert "Title: New AI Features Launch" in chunk.content
+        assert "Title: New AI Features Launch" in chunk.context_header
 
-    def test_header_omits_title_when_none(self):
+    def test_context_header_omits_title_when_none(self):
         chunk = chunk_none_enriched(SAMPLE_TEXT, make_metadata(title=None))[0]
-        assert "Title:" not in chunk.content
+        assert "Title:" not in chunk.context_header
 
-    def test_header_uses_pipe_separator(self):
+    def test_context_header_uses_pipe_separator(self):
         chunk = chunk_none_enriched(SAMPLE_TEXT, make_metadata())[0]
-        header_line = chunk.content.split("\n")[0]
-        assert " | " in header_line
+        assert " | " in chunk.context_header
 
-    def test_header_comes_before_text(self):
+    def test_content_is_raw_text_only(self):
         chunk = chunk_none_enriched(SAMPLE_TEXT, make_metadata())[0]
-        header_end = chunk.content.index("\n\n")
-        assert SAMPLE_TEXT in chunk.content[header_end:]
+        assert chunk.content == SAMPLE_TEXT
 
 
 # ---------------------------------------------------------------------------

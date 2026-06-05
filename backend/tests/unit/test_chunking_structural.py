@@ -92,11 +92,32 @@ class TestHeadingSplit:
 
     def test_chunk_content_starts_with_heading(self):
         chunks = chunk_structural(FIXTURE_MD, make_metadata())
-        # Header is prepended; section text starts after the first "\n\n"
-        bodies = [c.content.split("\n\n", 1)[1] for c in chunks]
-        assert bodies[0].startswith("# Section One")
-        assert bodies[1].startswith("## Section Two")
-        assert bodies[2].startswith("### Section Three")
+        assert chunks[0].content.startswith("# Section One")
+        assert chunks[1].content.startswith("## Section Two")
+        assert chunks[2].content.startswith("### Section Three")
+
+
+# ---------------------------------------------------------------------------
+# context_header: heading + document metadata
+# ---------------------------------------------------------------------------
+
+class TestContextHeader:
+    def test_context_header_contains_heading(self):
+        chunks = chunk_structural(FIXTURE_MD, make_metadata())
+        assert "# Section One" in chunks[0].context_header
+        assert "## Section Two" in chunks[1].context_header
+        assert "### Section Three" in chunks[2].context_header
+
+    def test_context_header_contains_metadata(self):
+        chunks = chunk_structural(FIXTURE_MD, make_metadata())
+        assert "Company: Celonis" in chunks[0].context_header
+        assert "Type: press_release" in chunks[0].context_header
+
+    def test_context_header_falls_back_to_doc_header_when_no_heading(self):
+        # Text without a heading: context_header should still be populated from metadata
+        md = _words(250)
+        chunks = chunk_structural(md, make_metadata(), min_tokens=10)
+        assert "Company: Celonis" in chunks[0].context_header
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +152,7 @@ class TestMaxTokenBound:
         md = "# Big Section\n\n" + _words(300)
         chunks = chunk_structural(md, make_metadata(), min_tokens=10, max_tokens=100)
         for c in chunks:
-            # Strip header before counting — the header is not part of the split logic
-            body = c.content.split("\n\n", 1)[1]
-            assert _count_tokens(body) <= 100
+            assert _count_tokens(c.content) <= 100
 
 
 # ---------------------------------------------------------------------------
@@ -146,9 +165,6 @@ class TestOverlap:
         md = "# Section\n\n" + _words(300)
         chunks = chunk_structural(md, make_metadata(), min_tokens=10, max_tokens=100, overlap_tokens=overlap)
         assert len(chunks) >= 2
-        # Strip header before comparing — overlap is in the body text, not the header
-        body_first = chunks[0].content.split("\n\n", 1)[1]
-        body_second = chunks[1].content.split("\n\n", 1)[1]
-        tokens_first = _ENCODING.encode(body_first)
-        tokens_second = _ENCODING.encode(body_second)
+        tokens_first = _ENCODING.encode(chunks[0].content)
+        tokens_second = _ENCODING.encode(chunks[1].content)
         assert tokens_first[-overlap:] == tokens_second[:overlap]
