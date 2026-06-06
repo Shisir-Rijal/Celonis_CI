@@ -66,6 +66,13 @@ class NewsletterData(BaseData):
 
 # --Positioning-Node:
 
+class BlogData(BaseModel):
+    heading: str | None = None
+    subheading: str | None = None
+    content: str | list[str] | None = None
+    source_link: str | None = None
+    publishing_date: str | None = None
+
 class PositioningData(BaseData):
     purpose: str | None = None
     vision: str | None = None
@@ -75,13 +82,6 @@ class PositioningData(BaseData):
     employer_positioning: str | None = None
     blogs: list[BlogData] | dict[str, Any] | None = None
     job_positing_employer_description: str | None = None
-
-class BlogData(BaseModel):
-    heading: str | None = None
-    subheading: str | None = None
-    content: str | list[str] | None = None
-    source_link: str | None = None
-    publishing_date: str | None = None
 
 
 # --SeoGeo-Node:
@@ -127,7 +127,7 @@ class VisualsData(BaseData):
 # --Wording-Node:
 
 class WordingData(BaseData):
-    description: str | None # .company_profile Finnhub
+    description: str | None = None  # .company_profile Finnhub
 
 
 # --- AgentState:
@@ -160,7 +160,7 @@ class CompetitorProfile(BaseModel):
     news: NewsData = Field(default_factory=NewsData)
     events: EventsData = Field(default_factory=EventsData)
     newsletter: NewsletterData = Field(default_factory=NewsletterData)
-    wording: WordingData = Field(defauls_factory=WordingData)
+    wording: WordingData = Field(default_factory=WordingData)
 
     @classmethod
     def from_state(cls, state: ResearchState) -> "CompetitorProfile":
