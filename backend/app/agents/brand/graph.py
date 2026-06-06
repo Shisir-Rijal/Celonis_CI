@@ -15,6 +15,7 @@ import structlog
 
 from langgraph.graph import START, END, StateGraph
 
+from app.agents.brand.nodes.geo_intelligence import geo_intelligence_node
 from app.agents.brand.state import BrandPipelineState
 from app.agents.research.nodes import seogeo
 from app.agents.research.state import (
@@ -81,20 +82,6 @@ async def load_profile_node(state: BrandPipelineState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Node: ai_search_coherence (stub — real logic in separate issue)
-# ---------------------------------------------------------------------------
-
-async def ai_search_coherence_node(state: BrandPipelineState) -> dict:
-    """AI-Search Coherence capability — stub.
-
-    TODO: implement real logic in AI-Search Coherence issue.
-    Reads state["profile"].seogeo.geo and writes results to Supabase.
-    """
-    # TODO: replace with real implementation
-    return {"completed_capabilities": ["ai_search_coherence"]}
-
-
-# ---------------------------------------------------------------------------
 # Graph wiring
 # ---------------------------------------------------------------------------
 
@@ -102,12 +89,12 @@ builder = StateGraph(BrandPipelineState)
 
 # Nodes
 builder.add_node("load_profile", load_profile_node)
-builder.add_node("ai_search_coherence", ai_search_coherence_node)
+builder.add_node("geo_intelligence", geo_intelligence_node)
 
 # Edges — load_profile first, then fan-out to capability nodes
 builder.add_edge(START, "load_profile")
-builder.add_edge("load_profile", "ai_search_coherence")
-builder.add_edge("ai_search_coherence", END)
+builder.add_edge("load_profile", "geo_intelligence")
+builder.add_edge("geo_intelligence", END)
 
 # Compile
 brand_graph = builder.compile()
