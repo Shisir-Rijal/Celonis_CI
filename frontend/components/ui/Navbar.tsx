@@ -25,6 +25,7 @@ export default function NavBar() {
 
         <div className="flex flex-col gap-1 flex-1">
           <NavButton text="Home" href="/" />
+          <NavButton text="GEO" href="/brand/geo-intelligence" />
           <NavButton text="News" href="/news" />
           <NavButton text="Chatbot" href="/chatbot" />
         </div>
