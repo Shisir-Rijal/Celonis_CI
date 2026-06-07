@@ -1,17 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import DashboardCard from "@components/brand/DashboardCard";
 import KpiTile from "@components/brand/KpiTile";
 import SectionHeader from "@components/brand/SectionHeader";
 import PageToolbar from "@components/brand/PageToolbar";
 import ChartPlaceholder from "@components/brand/ChartPlaceholder";
+import AlertCard from "@components/brand/AlertCard";
 import GeoTrendChart from "@components/brand/charts/GeoTrendChart";
 import LlmComparisonChart from "@components/brand/charts/LlmComparisonChart";
 import SovTierPanel from "@components/brand/charts/SovTierPanel";
 import PeerNetworkChart from "@components/brand/charts/PeerNetworkChart";
 import TerritoryHeatmap from "@components/brand/charts/TerritoryHeatmap";
+import KeywordTable from "@components/brand/charts/KeywordTable";
 import {
   ZoneEmpty,
   ZoneError,
@@ -25,7 +27,98 @@ import {
   useGeoStrategicMaps,
 } from "@/lib/brand/hooks";
 
+import type { DeepDiveResponse } from "@/lib/brand/types";
+
 const DEFAULT_COMPANY = "celonis.com";
+
+// ---------------------------------------------------------------------------
+// Deep Dive Zone — extracted to keep the main component readable
+// ---------------------------------------------------------------------------
+
+function DeepDiveZone({ data }: { data: DeepDiveResponse }) {
+  const [briefingOpen, setBriefingOpen] = useState(false);
+  const { alerts, keyword_rows, full_briefing } = data;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Alert cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {alerts.critical_gap ? (
+          <AlertCard
+            category="Critical Gap"
+            text={alerts.critical_gap}
+            priority="high"
+            recommendation="Address this territory before the next pipeline run."
+          />
+        ) : (
+          <DashboardCard label="Critical Gap">
+            <p className="text-sm text-neutral-grey-20">No critical gap identified.</p>
+          </DashboardCard>
+        )}
+
+        {alerts.framing_gap ? (
+          <AlertCard
+            category="Framing Gap"
+            text={alerts.framing_gap}
+            priority="medium"
+          />
+        ) : (
+          <DashboardCard label="Framing Gap">
+            <p className="text-sm text-neutral-grey-20">No framing gap identified.</p>
+          </DashboardCard>
+        )}
+
+        {alerts.counter_positioning ? (
+          <AlertCard
+            category="Counter-Positioning"
+            text={alerts.counter_positioning}
+            priority="medium"
+            recommendation="Review messaging to address this criticism."
+          />
+        ) : (
+          <DashboardCard label="Counter-Positioning">
+            <p className="text-sm text-neutral-grey-20">No counter-positioning found.</p>
+          </DashboardCard>
+        )}
+      </div>
+
+      {/* Keyword table */}
+      <DashboardCard
+        label="Keyword performance"
+        sublabel={`${keyword_rows.length} keywords · click any row to see the AI response excerpt`}
+      >
+        <KeywordTable rows={keyword_rows} />
+      </DashboardCard>
+
+      {/* Full briefing — collapsible */}
+      {full_briefing && (
+        <DashboardCard
+          label="Full strategic briefing"
+          sublabel="Synthesised narrative across all keywords"
+        >
+          <button
+            type="button"
+            onClick={() => setBriefingOpen((o) => !o)}
+            className="flex items-center gap-2 text-sm text-primary-black hover:text-secondary-green transition-colors font-medium cursor-pointer"
+          >
+            <span>{briefingOpen ? "▲" : "▼"}</span>
+            <span>{briefingOpen ? "Collapse" : "Read full briefing"}</span>
+          </button>
+          {briefingOpen && (
+            <div className="mt-4 pt-4 border-t border-black/5">
+              <p
+                className="text-sm text-primary-black leading-relaxed whitespace-pre-wrap"
+                style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}
+              >
+                {full_briefing}
+              </p>
+            </div>
+          )}
+        </DashboardCard>
+      )}
+    </div>
+  );
+}
 
 function formatPct(value: number | undefined | null): string {
   if (value === undefined || value === null) return "—";
@@ -309,37 +402,10 @@ export default function GeoIntelligencePage() {
           <ZoneSkeleton height={400} />
         ) : deep.isError ? (
           <ZoneError message={deep.error?.message} />
+        ) : deep.data ? (
+          <DeepDiveZone data={deep.data} />
         ) : (
-          <div className="flex flex-col gap-4">
-            {/* Alert cards row — proximity: all alerts grouped */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <DashboardCard label="Critical Gap">
-                <ChartPlaceholder label="Alert card" height={120} />
-              </DashboardCard>
-              <DashboardCard label="Framing Gap">
-                <ChartPlaceholder label="Alert card" height={120} />
-              </DashboardCard>
-              <DashboardCard label="Counter-Positioning">
-                <ChartPlaceholder label="Alert card" height={120} />
-              </DashboardCard>
-            </div>
-
-            {/* Keyword table — primary evidence surface */}
-            <DashboardCard
-              label="Keyword performance"
-              sublabel="All 30 keywords with filters and per-row evidence"
-            >
-              <ChartPlaceholder label="Keyword table" height={300} />
-            </DashboardCard>
-
-            {/* Full briefing — collapsed by default */}
-            <DashboardCard
-              label="Full strategic briefing"
-              sublabel="Synthesised narrative across all keywords"
-            >
-              <ChartPlaceholder label="Collapsed by default" height={80} />
-            </DashboardCard>
-          </div>
+          <ZoneEmpty message="No deep dive data yet." />
         )}
       </section>
     </div>
