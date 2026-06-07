@@ -3,68 +3,19 @@
 import dynamic from "next/dynamic";
 import type { PeerNetworkBlock } from "@/lib/brand/types";
 
-// ---------------------------------------------------------------------------
-// Types — extend Nivo's InputNode / InputLink with our custom fields
-// ---------------------------------------------------------------------------
+// ECharts must be imported client-side only (uses window)
+const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
-type NetworkNode = {
-  id: string;
-  is_target: boolean;
-  weight: number;
-};
-
-type NetworkLink = {
-  source: string;
-  target: string;
-  weight: number;
-  distance: number;
-};
-
-// ---------------------------------------------------------------------------
-// Dynamic import — Nivo uses browser APIs, cannot be SSR'd
-// ---------------------------------------------------------------------------
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ResponsiveNetwork = dynamic<any>(
-  () => import("@nivo/network").then((m) => m.ResponsiveNetwork),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center h-[320px] text-xs text-neutral-grey-20">
-        Loading network…
-      </div>
-    ),
-  }
-);
-
-// ---------------------------------------------------------------------------
-// Tooltip
-// ---------------------------------------------------------------------------
-
-function NodeTooltip({ node }: { node: { id: string; data: NetworkNode } }) {
-  return (
-    <div
-      className="rounded-lg border border-black/8 bg-white px-3 py-2 shadow-md text-xs"
-      style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
-    >
-      <span className="font-semibold text-primary-black">{node.id}</span>
-      <span className="text-neutral-grey-20 ml-2">
-        {node.data.weight} co-mention{node.data.weight !== 1 ? "s" : ""}
-      </span>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Chart
-// ---------------------------------------------------------------------------
+const CHART_FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 type PeerNetworkChartProps = {
   data: PeerNetworkBlock;
 };
 
 export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
-  const { nodes, links, primary_peer_group } = data;
+  const nodes = data?.nodes ?? [];
+  const links = data?.links ?? [];
+  const primary_peer_group = new Set(data?.primary_peer_group ?? []);
 
   if (!nodes.length) {
     return (
@@ -77,81 +28,109 @@ export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
     );
   }
 
-  const networkNodes: NetworkNode[] = nodes.map((n) => ({
+  const maxWeight = Math.max(...nodes.map((n) => n.weight));
+
+  const echartsNodes = nodes.map((n) => ({
     id: n.id,
-    is_target: n.is_target,
-    weight: n.weight,
+    name: n.id,
+    value: n.weight,
+    symbolSize: n.is_target
+      ? 36
+      : Math.max(10, Math.round(10 + (n.weight / maxWeight) * 22)),
+    itemStyle: {
+      color: n.is_target
+        ? "#5CFE50"
+        : primary_peer_group.has(n.id)
+        ? "#3233F5"
+        : "#CBCBCB",
+      borderColor: n.is_target ? "#16a34a" : "#ffffff",
+      borderWidth: 2,
+    },
+    label: {
+      show: n.is_target || n.weight >= 6,
+      color: "#1D1D1D",
+      fontSize: 11,
+      fontFamily: CHART_FONT,
+      fontWeight: n.is_target ? 600 : 400,
+      formatter: (p: { name: string }) =>
+        p.name.length > 16 ? p.name.slice(0, 14) + "…" : p.name,
+    },
   }));
 
-  const networkLinks: NetworkLink[] = links.map((l) => ({
+  const echartsLinks = links.map((l) => ({
     source: l.source,
     target: l.target,
-    weight: l.weight,
-    distance: l.distance,
+    value: l.weight,
+    lineStyle: {
+      width: Math.max(1, Math.round(l.weight * 0.5)),
+      color: "#e5e5e5",
+      curveness: 0,
+      opacity: 0.8,
+    },
   }));
 
-  const primarySet = new Set(primary_peer_group);
+  const option = {
+    tooltip: {
+      trigger: "item",
+      formatter: (p: { data: { name: string; value?: number } }) => {
+        if (!p.data?.name) return "";
+        return `<span style="font-family:${CHART_FONT};font-size:12px">
+          <b>${p.data.name}</b><br/>
+          ${p.data.value ?? ""} co-mention${(p.data.value ?? 0) !== 1 ? "s" : ""}
+        </span>`;
+      },
+      backgroundColor: "#fff",
+      borderColor: "rgba(0,0,0,0.08)",
+      borderWidth: 1,
+      extraCssText: "box-shadow:0 2px 8px rgba(0,0,0,0.08);border-radius:8px;",
+    },
+    series: [
+      {
+        type: "graph",
+        layout: "force",
+        data: echartsNodes,
+        links: echartsLinks,
+        roam: true,
+        draggable: true,
+        force: {
+          repulsion: 180,
+          gravity: 0.1,
+          edgeLength: [30, 200],
+          layoutAnimation: true,
+        },
+        emphasis: {
+          focus: "adjacency",
+          lineStyle: { width: 3 },
+        },
+        lineStyle: { opacity: 0.6 },
+      },
+    ],
+  };
 
   return (
     <div>
-      <div style={{ height: 320 }}>
-        <ResponsiveNetwork
-          nodes={networkNodes}
-          links={networkLinks}
-          repulsivity={8}
-          distanceMin={1}
-          distanceMax={300}
-          iterations={80}
-          animate={false}
-          nodeSize={(node: { data: NetworkNode }) =>
-            node.data.is_target ? 22 : Math.max(10, 8 + node.data.weight * 2)
-          }
-          activeNodeSize={(node: { data: NetworkNode }) =>
-            node.data.is_target ? 26 : Math.max(12, 10 + node.data.weight * 2)
-          }
-          inactiveNodeSize={(node: { data: NetworkNode }) =>
-            node.data.is_target ? 20 : Math.max(8, 6 + node.data.weight * 2)
-          }
-          nodeColor={(node: { data: NetworkNode }) => {
-            if (node.data.is_target) return "#5CFE50";
-            if (primarySet.has(node.data.id)) return "#3233F5";
-            return "#CBCBCB";
-          }}
-          nodeBorderWidth={2}
-          nodeBorderColor={(node: { data: NetworkNode }) =>
-            node.data.is_target ? "#16a34a" : "#ffffff"
-          }
-          linkThickness={(link: { data: NetworkLink }) =>
-            Math.max(1, link.data.weight * 0.8)
-          }
-          linkColor={{ from: "color", modifiers: [["opacity", 0.15]] }}
-          nodeTooltip={NodeTooltip}
-          theme={{
-            tooltip: { container: { display: "none" } },
-          }}
-        />
-      </div>
-
-      {/* Legend */}
+      <ReactECharts
+        option={option}
+        style={{ width: "100%", height: 320 }}
+        opts={{ renderer: "svg" }}
+      />
       <div
-        className="mt-3 flex items-center gap-5 text-[11px] text-neutral-grey-20"
-        style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+        className="flex items-center gap-5 text-[11px] text-neutral-grey-20"
+        style={{ fontFamily: CHART_FONT }}
       >
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-secondary-green border-2 border-green-600" />
+          <span className="w-3 h-3 rounded-full bg-secondary-green border-2 border-green-600 shrink-0" />
           <span>Celonis</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-secondary-blue" />
+          <span className="w-3 h-3 rounded-full bg-secondary-blue shrink-0" />
           <span>Primary peer group</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-neutral-grey-10" />
+          <span className="w-3 h-3 rounded-full bg-neutral-grey-10 shrink-0" />
           <span>Other mentions</span>
         </div>
-        <div className="ml-auto text-neutral-grey-10">
-          Node size = co-mention frequency
-        </div>
+        <span className="ml-auto text-neutral-grey-10">Node size = frequency · drag to explore</span>
       </div>
     </div>
   );

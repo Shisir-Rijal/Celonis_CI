@@ -265,10 +265,10 @@ export default function GeoIntelligencePage() {
               <ZoneSkeleton height={320} />
             ) : maps.isError ? (
               <ZoneError />
-            ) : maps.data ? (
+            ) : maps.data?.peer_network ? (
               <PeerNetworkChart data={maps.data.peer_network} />
             ) : (
-              <ZoneEmpty message="No strategic map data yet." />
+              <ZoneEmpty message="No co-mention data yet." />
             )}
           </DashboardCard>
           <DashboardCard
@@ -279,7 +279,7 @@ export default function GeoIntelligencePage() {
               <ZoneSkeleton height={320} />
             ) : maps.isError ? (
               <ZoneError />
-            ) : maps.data ? (
+            ) : maps.data?.territory_map ? (
               <TerritoryHeatmap data={maps.data.territory_map} />
             ) : (
               <ZoneEmpty message="No territory data yet." />

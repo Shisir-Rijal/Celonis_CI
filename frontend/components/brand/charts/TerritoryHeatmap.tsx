@@ -3,33 +3,9 @@
 import dynamic from "next/dynamic";
 import type { TerritoryMapBlock } from "@/lib/brand/types";
 
-// ---------------------------------------------------------------------------
-// Dynamic import — Nivo uses browser APIs
-// ---------------------------------------------------------------------------
+const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ResponsiveHeatMap = dynamic<any>(
-  () => import("@nivo/heatmap").then((m) => m.ResponsiveHeatMap),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center h-[320px] text-xs text-neutral-grey-20">
-        Loading heatmap…
-      </div>
-    ),
-  }
-);
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const STRENGTH_LABELS: Record<string, string> = {
-  listed: "Listed",
-  attributed: "Attributed",
-  recommended: "Recommended",
-  default: "Default",
-};
+const CHART_FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 const TIER_LABELS: Record<string, string> = {
   brand_category: "Brand & Category",
@@ -37,47 +13,18 @@ const TIER_LABELS: Record<string, string> = {
   competitor_trigger: "Competitor Trigger",
 };
 
-// Ownership badge colours
-const OWNED_COLOR = "#dcfce7";    // green-100
-const CONTESTED_COLOR = "#fef9c3"; // yellow-100
-const ABSENT_COLOR = "#f5f5f5";   // grey-00
+const STRENGTH_LABELS: Record<string, string> = {
+  listed: "Listed",
+  attributed: "Attributed",
+  recommended: "Recommended",
+  default: "Default",
+  absent: "Absent",
+};
 
-// ---------------------------------------------------------------------------
-// Tooltip
-// ---------------------------------------------------------------------------
-
-function CellTooltip({
-  cell,
-}: {
-  cell: {
-    id: string;
-    serieId: string;
-    value: number | null;
-    data: { x: string; y: number };
-  };
-}) {
-  const tier = TIER_LABELS[cell.serieId] ?? cell.serieId;
-  const strength = STRENGTH_LABELS[cell.data.x] ?? cell.data.x;
-  const count = cell.value ?? 0;
-
-  return (
-    <div
-      className="rounded-lg border border-black/8 bg-white px-3 py-2.5 shadow-md text-xs"
-      style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
-    >
-      <div className="font-semibold text-primary-black mb-1">
-        {tier} — {strength}
-      </div>
-      <div className="text-neutral-grey-20">
-        {count} keyword{count !== 1 ? "s" : ""}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Territory status legend helper
-// ---------------------------------------------------------------------------
+// Territory status badge colours
+const OWNED_COLOR = "#dcfce7";
+const CONTESTED_COLOR = "#fef9c3";
+const ABSENT_COLOR = "#f5f5f5";
 
 function TerritoryBadge({
   label,
@@ -95,7 +42,7 @@ function TerritoryBadge({
         className="mt-0.5 shrink-0 w-3 h-3 rounded-sm border border-black/10"
         style={{ background: color }}
       />
-      <div>
+      <div style={{ fontFamily: CHART_FONT }}>
         <span className="text-[10px] tracking-[0.12em] uppercase text-neutral-grey-20 font-medium">
           {label}:{" "}
         </span>
@@ -108,112 +55,137 @@ function TerritoryBadge({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Chart
-// ---------------------------------------------------------------------------
-
 type TerritoryHeatmapProps = {
   data: TerritoryMapBlock;
 };
 
 export default function TerritoryHeatmap({ data }: TerritoryHeatmapProps) {
-  const { rows, owned_territories, contested_territories, absent_territories } =
-    data;
+  const rows = data?.rows ?? [];
+  const owned_territories = data?.owned_territories ?? [];
+  const contested_territories = data?.contested_territories ?? [];
+  const absent_territories = data?.absent_territories ?? [];
 
   if (!rows.length) {
     return (
-      <div className="flex flex-col items-center justify-center h-[320px] gap-2">
+      <div className="flex flex-col items-center justify-center h-[220px] gap-2">
         <p className="text-sm text-neutral-grey-20">No territory data yet.</p>
-        <p className="text-xs text-neutral-grey-10">
-          Requires at least one pipeline run with structured keyword analysis.
-        </p>
       </div>
     );
   }
 
-  // Relabel row ids and cell x-values for display
-  const displayRows = rows.map((row) => ({
-    id: TIER_LABELS[row.id] ?? row.id,
-    data: row.data.map((cell) => ({
-      x: STRENGTH_LABELS[cell.x] ?? cell.x,
-      y: cell.y,
-    })),
-  }));
+  // Build ECharts heatmap data: [colIndex, rowIndex, value]
+  const allStrengths = ["listed", "attributed", "recommended", "default", "absent"];
+  const allTiers = rows.map((r) => r.id);
+
+  const chartData: [number, number, number][] = [];
+  let maxVal = 0;
+
+  rows.forEach((row, rowIdx) => {
+    allStrengths.forEach((strength, colIdx) => {
+      const cell = row.data.find((c) => c.x === strength);
+      const val = cell?.y ?? 0;
+      if (val > maxVal) maxVal = val;
+      chartData.push([colIdx, rowIdx, val]);
+    });
+  });
+
+  const colLabels = allStrengths.map((s) => STRENGTH_LABELS[s] ?? s);
+  const rowLabels = allTiers.map((t) => TIER_LABELS[t] ?? t);
+
+  const option = {
+    tooltip: {
+      trigger: "item",
+      formatter: (p: { data: [number, number, number] }) => {
+        const [col, row, val] = p.data;
+        const tier = rowLabels[row] ?? "";
+        const strength = colLabels[col] ?? "";
+        return `<span style="font-family:${CHART_FONT};font-size:12px">
+          <b>${tier}</b><br/>${strength}: <b>${val}</b> keyword${val !== 1 ? "s" : ""}
+        </span>`;
+      },
+      backgroundColor: "#fff",
+      borderColor: "rgba(0,0,0,0.08)",
+      borderWidth: 1,
+      extraCssText: "box-shadow:0 2px 8px rgba(0,0,0,0.08);border-radius:8px;",
+    },
+    grid: { top: 40, right: 20, bottom: 10, left: 140 },
+    xAxis: {
+      type: "category",
+      data: colLabels,
+      splitArea: { show: true },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        fontFamily: CHART_FONT,
+        fontSize: 11,
+        color: "#767676",
+        interval: 0,
+      },
+    },
+    yAxis: {
+      type: "category",
+      data: rowLabels,
+      splitArea: { show: true },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        fontFamily: CHART_FONT,
+        fontSize: 11,
+        color: "#767676",
+        width: 120,
+        overflow: "truncate",
+      },
+    },
+    visualMap: {
+      min: 0,
+      max: maxVal || 1,
+      calculable: false,
+      show: false,
+      inRange: {
+        // 0 → near white, max → secondary-green
+        color: ["#f0fdf4", "#86efac", "#5CFE50"],
+      },
+    },
+    series: [
+      {
+        type: "heatmap",
+        data: chartData,
+        label: {
+          show: true,
+          fontFamily: CHART_FONT,
+          fontSize: 12,
+          fontWeight: 500,
+          color: "#1D1D1D",
+          formatter: (p: { data: [number, number, number] }) =>
+            p.data[2] === 0 ? "" : String(p.data[2]),
+        },
+        emphasis: {
+          itemStyle: { shadowBlur: 6, shadowColor: "rgba(0,0,0,0.1)" },
+        },
+        itemStyle: {
+          borderColor: "#fff",
+          borderWidth: 3,
+          borderRadius: 4,
+        },
+      },
+    ],
+  };
 
   return (
     <div>
-      <div style={{ height: 260 }}>
-        <ResponsiveHeatMap
-          data={displayRows}
-          margin={{ top: 20, right: 20, bottom: 40, left: 130 }}
-          valueFormat=">-.0f"
-          colors={{
-            type: "sequential",
-            scheme: "greens",
-            minValue: 0,
-          }}
-          emptyColor="#f5f5f5"
-          borderRadius={4}
-          borderWidth={2}
-          borderColor="#ffffff"
-          enableLabels
-          labelTextColor={(cell: { value: number }) =>
-            (cell.value ?? 0) > 3 ? "#ffffff" : "#1D1D1D"
-          }
-          axisTop={null}
-          axisLeft={{
-            tickSize: 0,
-            tickPadding: 8,
-            legend: "",
-            legendOffset: 0,
-          }}
-          axisBottom={{
-            tickSize: 0,
-            tickPadding: 8,
-            legend: "",
-            legendOffset: 36,
-          }}
-          tooltip={CellTooltip}
-          animate={false}
-          theme={{
-            text: {
-              fontFamily: "system-ui, -apple-system, sans-serif",
-              fontSize: 11,
-              fill: "#767676",
-            },
-            axis: {
-              ticks: {
-                text: {
-                  fontFamily: "system-ui, -apple-system, sans-serif",
-                  fontSize: 11,
-                  fill: "#767676",
-                },
-              },
-            },
-          }}
-        />
-      </div>
+      <ReactECharts
+        option={option}
+        style={{ width: "100%", height: 200 }}
+        opts={{ renderer: "svg" }}
+      />
 
-      {/* Territory status */}
       <div
-        className="mt-4 flex flex-col gap-2 text-[11px] border-t border-black/5 pt-4"
-        style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+        className="mt-3 flex flex-col gap-1.5 text-[11px] border-t border-black/5 pt-3"
+        style={{ fontFamily: CHART_FONT }}
       >
-        <TerritoryBadge
-          label="Owned"
-          color={OWNED_COLOR}
-          items={owned_territories}
-        />
-        <TerritoryBadge
-          label="Contested"
-          color={CONTESTED_COLOR}
-          items={contested_territories}
-        />
-        <TerritoryBadge
-          label="Gap"
-          color={ABSENT_COLOR}
-          items={absent_territories}
-        />
+        <TerritoryBadge label="Owned" color={OWNED_COLOR} items={owned_territories} />
+        <TerritoryBadge label="Contested" color={CONTESTED_COLOR} items={contested_territories} />
+        <TerritoryBadge label="Gap" color={ABSENT_COLOR} items={absent_territories} />
       </div>
     </div>
   );
