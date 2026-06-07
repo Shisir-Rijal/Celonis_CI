@@ -10,6 +10,8 @@ import ChartPlaceholder from "@components/brand/ChartPlaceholder";
 import GeoTrendChart from "@components/brand/charts/GeoTrendChart";
 import LlmComparisonChart from "@components/brand/charts/LlmComparisonChart";
 import SovTierPanel from "@components/brand/charts/SovTierPanel";
+import PeerNetworkChart from "@components/brand/charts/PeerNetworkChart";
+import TerritoryHeatmap from "@components/brand/charts/TerritoryHeatmap";
 import {
   ZoneEmpty,
   ZoneError,
@@ -257,26 +259,30 @@ export default function GeoIntelligencePage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <DashboardCard
             label="Competitive Set Map"
-            sublabel="Co-mentioned brands across the keyword set"
+            sublabel="Co-mentioned brands — node size = frequency"
           >
             {maps.isLoading ? (
               <ZoneSkeleton height={320} />
             ) : maps.isError ? (
               <ZoneError />
+            ) : maps.data ? (
+              <PeerNetworkChart data={maps.data.peer_network} />
             ) : (
-              <ChartPlaceholder label="Network graph — Nivo" height={320} />
+              <ZoneEmpty message="No strategic map data yet." />
             )}
           </DashboardCard>
           <DashboardCard
             label="Use-Case Territory Map"
-            sublabel="Keyword tier × recommendation strength"
+            sublabel="Keyword tier × recommendation strength — darker = more keywords"
           >
             {maps.isLoading ? (
               <ZoneSkeleton height={320} />
             ) : maps.isError ? (
               <ZoneError />
+            ) : maps.data ? (
+              <TerritoryHeatmap data={maps.data.territory_map} />
             ) : (
-              <ChartPlaceholder label="Heatmap — Nivo" height={320} />
+              <ZoneEmpty message="No territory data yet." />
             )}
           </DashboardCard>
         </div>
