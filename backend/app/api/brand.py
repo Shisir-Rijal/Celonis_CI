@@ -370,8 +370,11 @@ async def get_strategic_maps(
     company_name = company.split(".")[0].capitalize()
     total_keywords = len(sightings)
 
+    # Celonis weight = keywords where it was actually mentioned (not total keywords)
+    celonis_mention_count = sum(1 for row in sightings if row.get("mentioned"))
+
     peer_nodes: list[PeerNode] = [
-        PeerNode(id=company_name, is_target=True, weight=total_keywords)
+        PeerNode(id=company_name, is_target=True, weight=celonis_mention_count)
     ] + [
         PeerNode(id=name, is_target=False, weight=count)
         for name, count in co_mention_counts.most_common(15)

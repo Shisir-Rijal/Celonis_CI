@@ -46,6 +46,7 @@ export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
       borderColor: n.is_target ? "#16a34a" : "#ffffff",
       borderWidth: 2,
     },
+    isTarget: n.is_target,
     label: {
       show: n.is_target || n.weight >= 6,
       color: "#1D1D1D",
@@ -72,11 +73,14 @@ export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
   const option = {
     tooltip: {
       trigger: "item",
-      formatter: (p: { data: { name: string; value?: number } }) => {
+      formatter: (p: { data: { name: string; value?: number; isTarget?: boolean } }) => {
         if (!p.data?.name) return "";
+        const count = p.data.value ?? 0;
+        const sublabel = p.data.isTarget
+          ? `Mentioned in <b>${count}</b> of 30 keywords`
+          : `Co-mentioned in <b>${count}</b> keyword${count !== 1 ? "s" : ""} alongside Celonis`;
         return `<span style="font-family:${CHART_FONT};font-size:12px">
-          <b>${p.data.name}</b><br/>
-          ${p.data.value ?? ""} co-mention${(p.data.value ?? 0) !== 1 ? "s" : ""}
+          <b>${p.data.name}</b><br/><span style="color:#767676;font-size:11px">${sublabel}</span>
         </span>`;
       },
       backgroundColor: "#fff",
