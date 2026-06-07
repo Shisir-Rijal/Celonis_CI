@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { poppins } from "@/lib/fonts";
+import { ReactQueryProvider } from "@/lib/queryProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export default function RootLayout({
       className={`${poppins.variable} h-full antialiased`}
     >
       <body className="min-h-screen">
-        {children}
+        <ReactQueryProvider>{children}</ReactQueryProvider>
       </body>
     </html>
   );
