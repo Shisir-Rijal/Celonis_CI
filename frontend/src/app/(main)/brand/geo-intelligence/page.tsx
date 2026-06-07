@@ -7,6 +7,8 @@ import KpiTile from "@components/brand/KpiTile";
 import SectionHeader from "@components/brand/SectionHeader";
 import PageToolbar from "@components/brand/PageToolbar";
 import ChartPlaceholder from "@components/brand/ChartPlaceholder";
+import GeoTrendChart from "@components/brand/charts/GeoTrendChart";
+import LlmComparisonChart from "@components/brand/charts/LlmComparisonChart";
 import {
   ZoneEmpty,
   ZoneError,
@@ -190,7 +192,7 @@ export default function GeoIntelligencePage() {
             ) : intel.isError ? (
               <ZoneError />
             ) : (
-              <ChartPlaceholder label="Line chart — Recharts" />
+              <GeoTrendChart series={intel.data?.trends.series ?? []} />
             )}
           </DashboardCard>
           <DashboardCard
@@ -202,7 +204,9 @@ export default function GeoIntelligencePage() {
             ) : intel.isError ? (
               <ZoneError />
             ) : (
-              <ChartPlaceholder label="Bar chart — Recharts" />
+              <LlmComparisonChart
+                data={intel.data?.trends.llm_comparison ?? []}
+              />
             )}
           </DashboardCard>
         </div>
