@@ -9,6 +9,7 @@ import PageToolbar from "@components/brand/PageToolbar";
 import ChartPlaceholder from "@components/brand/ChartPlaceholder";
 import GeoTrendChart from "@components/brand/charts/GeoTrendChart";
 import LlmComparisonChart from "@components/brand/charts/LlmComparisonChart";
+import SovTierPanel from "@components/brand/charts/SovTierPanel";
 import {
   ZoneEmpty,
   ZoneError,
@@ -233,11 +234,12 @@ export default function GeoIntelligencePage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {sov.data.tiers.map((tier) => (
-              <DashboardCard key={tier.tier} label={tier.label}>
-                <ChartPlaceholder
-                  label="Ranked list — placeholder"
-                  height={180}
-                />
+              <DashboardCard
+                key={tier.tier}
+                label={tier.label}
+                sublabel={`Top co-mentioned brands — ${tier.total_keywords} keywords`}
+              >
+                <SovTierPanel tier={tier} />
               </DashboardCard>
             ))}
           </div>
