@@ -28,6 +28,7 @@ from app.agents.brand.capability import CapabilityResult
 from app.agents.brand.keywords import ALL_BRAND_KEYWORDS, KEYWORD_TIER
 from app.agents.brand.repositories.geo_repository import (
     GeoSightingRow,
+    insert_geo_run,
     insert_geo_sightings,
 )
 from app.agents.brand.state import BrandPipelineState
@@ -243,6 +244,16 @@ async def geo_intelligence_node(state: BrandPipelineState) -> dict:
             # Non-fatal: continue to synthesis
 
         # ------------------------------------------------------------------
+        # Phase 3.5 — Compute recommendation_rate before synthesis
+        # Done here while analyses are in memory — avoids re-querying sightings.
+        # ------------------------------------------------------------------
+        rec_count = sum(
+            1 for a in analyses.values()
+            if a is not None and a.recommendation_strength in ("recommended", "default")
+        )
+        recommendation_rate = rec_count / len(ALL_BRAND_KEYWORDS) if ALL_BRAND_KEYWORDS else 0.0
+
+        # ------------------------------------------------------------------
         # Phase 4 — Synthesis (o4-mini over all results)
         # ------------------------------------------------------------------
         sightings_for_synthesis = [
@@ -274,6 +285,13 @@ async def geo_intelligence_node(state: BrandPipelineState) -> dict:
             )
             synthesis = await structured_synthesis_llm.ainvoke(messages)
             logger.info("geo_synthesis_done", company=company)
+
+            # Persist synthesis for time-series tracking
+            try:
+                insert_geo_run(company, run_at, synthesis, recommendation_rate)
+                logger.info("geo_run_persisted", company=company)
+            except Exception as persist_exc:
+                logger.error("geo_run_persist_failed", company=company, error=str(persist_exc))
         except Exception as exc:
             logger.error("geo_synthesis_failed", company=company, error=str(exc))
 

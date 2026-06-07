@@ -19,6 +19,7 @@ from supabase import Client
 from app.rag.supabase_client import get_supabase
 
 TABLE = "brand_geo_sightings"
+RUNS_TABLE = "brand_geo_runs"
 
 
 @dataclass
@@ -131,3 +132,50 @@ def insert_geo_sightings(
         payloads.append({k: v for k, v in payload.items() if v is not None})
 
     db.table(TABLE).insert(payloads).execute()
+
+
+def insert_geo_run(
+    company: str,
+    run_at: datetime,
+    synthesis: "GeoSynthesisOutput",
+    recommendation_rate: float,
+    client: Client | None = None,
+) -> None:
+    """Persist one synthesis result row to brand_geo_runs.
+
+    One row per pipeline run. Enables delta tracking over time —
+    compare any two run_at values to see how the strategic analysis changed.
+
+    Args:
+        company:   Company domain, e.g. "celonis.com".
+        run_at:    Timestamp of the pipeline run.
+        synthesis: Structured synthesis output from the GEO Intelligence node.
+        client:    Optional Supabase client override for testing.
+    """
+    from app.prompts.brand.geo_synthesis import GeoSynthesisOutput  # local import avoids circular
+
+    db = client or get_supabase()
+
+    payload: dict[str, Any] = {
+        "id": str(uuid4()),
+        "company": company,
+        "run_at": run_at.isoformat(),
+        "mention_rate": synthesis.mention_rate,
+        "recommendation_rate": recommendation_rate,
+        "gap_keyword_count": synthesis.gap_keyword_count,
+        "dominant_framing": synthesis.dominant_framing,
+        "strongest_tier": synthesis.strongest_tier,
+        "top_counter_positioning": synthesis.top_counter_positioning,
+        "narrative": synthesis.narrative,
+        "critical_gap": synthesis.critical_gap,
+        "framing_gap": synthesis.framing_gap,
+        "peer_group_assessment": synthesis.peer_group_assessment,
+        "owned_territories": json.dumps(synthesis.owned_territories or []),
+        "contested_territories": json.dumps(synthesis.contested_territories or []),
+        "absent_territories": json.dumps(synthesis.absent_territories or []),
+        "primary_peer_group": json.dumps(synthesis.primary_peer_group or []),
+    }
+
+    db.table(RUNS_TABLE).insert(
+        {k: v for k, v in payload.items() if v is not None}
+    ).execute()
