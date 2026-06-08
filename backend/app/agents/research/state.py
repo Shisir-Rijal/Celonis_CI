@@ -54,8 +54,70 @@ class NewsItem(BaseModel):
     source_link: str | None = None
     date: str | None = None
 
+    def to_rag_document(self, company: str) -> dict:
+        """Convert this NewsItem to a RAGDocument-compatible dict.
+
+        Return type is dict for now; will be updated to RAGDocument
+        once Issue #73 defines the type.
+        """
+        content = self.text or self.summary or self.heading or ""
+
+        if self.text:
+            chunking_strategy = "structural" if len(self.text) > 100 else "agentic"
+        else:
+            chunking_strategy = "none"
+
+        try:
+            parsed_date = datetime.strptime(self.date, "%Y-%m-%d") if self.date else datetime.utcnow()
+        except ValueError:
+            parsed_date = datetime.utcnow()
+
+        return {
+            "content": content,
+            "metadata": {
+                "company": company,
+                "source_type": "news",
+                "source_origin": "earned",
+                "date": parsed_date,
+                "url": self.source_link or "",
+                "title": self.heading,
+                "language": "en",
+                "topic": ["news"],
+                "content_type": "text",
+                "visual_type": None,
+                "chunking_strategy": chunking_strategy,
+            },
+        }
+
+
 class NewsData(BaseData):
-    news: list[Any] = []
+    news: list[NewsItem] = []
+
+    def to_rag_documents(self, company: str) -> list[dict]:
+        """Convert all NewsItems to RAGDocument-compatible dicts.
+
+        Skips items where content is empty.
+        Return type is list[dict] for now; will be updated once Issue #73
+        defines RAGDocument.
+        """
+        result = []
+        for item in self.news:
+            doc = item.to_rag_document(company)
+            if doc["content"]:
+                result.append(doc)
+        return result
+
+    def get_frequency(self) -> dict[str, int]:
+        """Return article count per date (YYYY-MM-DD).
+
+        Skips items where date is None.
+        """
+        frequency: dict[str, int] = {}
+        for item in self.news:
+            if item.date is None:
+                continue
+            frequency[item.date] = frequency.get(item.date, 0) + 1
+        return frequency
 
 
 # --Newsletter-Node:
