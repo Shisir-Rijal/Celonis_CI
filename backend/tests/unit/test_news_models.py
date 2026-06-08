@@ -1,13 +1,19 @@
-"""Unit tests for NewsItem.to_rag_document() and NewsData.to_rag_documents() / get_frequency().
+"""Unit tests for to_rag_document(), to_rag_documents(), get_frequency().
 
 Issue #98
 """
 
 from datetime import datetime
-from app.agents.research.state import NewsItem, NewsData
+from app.agents.research.state import (
+    NewsItem,
+    NewsData,
+    to_rag_document,
+    to_rag_documents,
+    get_frequency,
+)
 
 
-# --- NewsItem.to_rag_document() ---
+# --- to_rag_document() ---
 
 def test_to_rag_document_all_fields():
     item = NewsItem(
@@ -18,7 +24,7 @@ def test_to_rag_document_all_fields():
         source_link="https://techcrunch.com/celonis",
         date="2024-01-15",
     )
-    doc = item.to_rag_document(company="celonis")
+    doc = to_rag_document(item, company="celonis")
 
     assert doc["content"] == item.text
     assert doc["metadata"]["company"] == "celonis"
@@ -36,66 +42,58 @@ def test_to_rag_document_all_fields():
 
 def test_to_rag_document_only_heading():
     item = NewsItem(heading="Celonis news")
-    doc = item.to_rag_document(company="celonis")
+    doc = to_rag_document(item, company="celonis")
 
     assert doc["content"] == "Celonis news"
     assert doc["metadata"]["chunking_strategy"] == "none"
 
 
 def test_to_rag_document_short_text():
-    item = NewsItem(
-        heading="Short",
-        text="Short text.",
-    )
-    doc = item.to_rag_document(company="celonis")
+    item = NewsItem(heading="Short", text="Short text.")
+    doc = to_rag_document(item, company="celonis")
 
     assert doc["content"] == "Short text."
     assert doc["metadata"]["chunking_strategy"] == "agentic"
 
 
 def test_to_rag_document_text_longer_than_100():
-    item = NewsItem(
-        text="a" * 101,
-    )
-    doc = item.to_rag_document(company="celonis")
+    item = NewsItem(text="a" * 101)
+    doc = to_rag_document(item, company="celonis")
 
     assert doc["metadata"]["chunking_strategy"] == "structural"
 
 
 def test_to_rag_document_content_fallback_order():
-    # text takes priority over summary
     item = NewsItem(text="full text", summary="summary", heading="heading")
-    assert item.to_rag_document(company="celonis")["content"] == "full text"
+    assert to_rag_document(item, company="celonis")["content"] == "full text"
 
-    # summary takes priority over heading
     item2 = NewsItem(summary="summary", heading="heading")
-    assert item2.to_rag_document(company="celonis")["content"] == "summary"
+    assert to_rag_document(item2, company="celonis")["content"] == "summary"
 
-    # heading is last fallback
     item3 = NewsItem(heading="heading")
-    assert item3.to_rag_document(company="celonis")["content"] == "heading"
+    assert to_rag_document(item3, company="celonis")["content"] == "heading"
 
 
 def test_to_rag_document_invalid_date_fallback():
     item = NewsItem(heading="Test", date="not-a-date")
-    doc = item.to_rag_document(company="celonis")
+    doc = to_rag_document(item, company="celonis")
     assert isinstance(doc["metadata"]["date"], datetime)
 
 
 def test_to_rag_document_no_source_link():
     item = NewsItem(heading="Test")
-    doc = item.to_rag_document(company="celonis")
+    doc = to_rag_document(item, company="celonis")
     assert doc["metadata"]["url"] == ""
 
 
-# --- NewsData.to_rag_documents() ---
+# --- to_rag_documents() ---
 
 def test_to_rag_documents_skips_empty_content():
     data = NewsData(news=[
         NewsItem(heading="Has content"),
-        NewsItem(),  # no text, no summary, no heading → empty content
+        NewsItem(),
     ])
-    docs = data.to_rag_documents(company="celonis")
+    docs = to_rag_documents(data, company="celonis")
     assert len(docs) == 1
     assert docs[0]["content"] == "Has content"
 
@@ -105,11 +103,11 @@ def test_to_rag_documents_all_valid():
         NewsItem(heading="Article 1"),
         NewsItem(heading="Article 2"),
     ])
-    docs = data.to_rag_documents(company="celonis")
+    docs = to_rag_documents(data, company="celonis")
     assert len(docs) == 2
 
 
-# --- NewsData.get_frequency() ---
+# --- get_frequency() ---
 
 def test_get_frequency_aggregates_same_date():
     data = NewsData(news=[
@@ -117,7 +115,7 @@ def test_get_frequency_aggregates_same_date():
         NewsItem(heading="B", date="2024-01-15"),
         NewsItem(heading="C", date="2024-01-16"),
     ])
-    freq = data.get_frequency()
+    freq = get_frequency(data)
     assert freq["2024-01-15"] == 2
     assert freq["2024-01-16"] == 1
 
@@ -127,11 +125,11 @@ def test_get_frequency_skips_none_date():
         NewsItem(heading="A", date="2024-01-15"),
         NewsItem(heading="B", date=None),
     ])
-    freq = data.get_frequency()
+    freq = get_frequency(data)
     assert len(freq) == 1
     assert "2024-01-15" in freq
 
 
 def test_get_frequency_empty():
     data = NewsData(news=[])
-    assert data.get_frequency() == {}
+    assert get_frequency(data) == {}
