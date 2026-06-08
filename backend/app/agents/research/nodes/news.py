@@ -194,27 +194,45 @@ async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
-    try:
-        all_news: list[NewsItem] = []
+    all_news: list[NewsItem] = []
+    source_errors: list[str] = []
 
-        # Finnhub
+    # Finnhub
+    try:
         ticker = _get_symbol(domain)
         if ticker:
             all_news += _get_finnhub_news(ticker)
-
-        # Serper
-        all_news += await _get_serper_news(domain)
-
-        # Firecrawl
-        all_news += await _get_firecrawl_news(domain)
-
-        return {
-            "news": NewsData(news=all_news, source="finnhub+serper+firecrawl"),
-            "completed_nodes": ["news"],
-        }
     except Exception as e:
-        logger.error("node_failed", node="news", error=str(e))
-        return {"errors": [f"news: {e}"]}
+        logger.warning("news_source_failed", source="finnhub", error=str(e))
+        source_errors.append(f"finnhub: {e}")
+
+    # Serper
+    try:
+        all_news += await _get_serper_news(domain)
+    except Exception as e:
+        logger.warning("news_source_failed", source="serper", error=str(e))
+        source_errors.append(f"serper: {e}")
+
+    # Firecrawl
+    try:
+        all_news += await _get_firecrawl_news(domain)
+    except Exception as e:
+        logger.warning("news_source_failed", source="firecrawl", error=str(e))
+        source_errors.append(f"firecrawl: {e}")
+
+    # All three sources raised exceptions and no articles collected
+    if not all_news and len(source_errors) == 3:
+        from app.exceptions import NewsError
+        logger.error("all_news_sources_failed", domain=domain, errors=source_errors)
+        raise NewsError(
+            f"All news sources failed for domain '{domain}': "
+            + " | ".join(source_errors)
+        )
+
+    return {
+        "news": NewsData(news=all_news, source="finnhub+serper+firecrawl"),
+        "completed_nodes": ["news"],
+    }
 
 
 if __name__ == "__main__":
@@ -222,7 +240,7 @@ if __name__ == "__main__":
     structlog.configure(processors=[structlog.dev.ConsoleRenderer()])
 
     async def main():
-        from app.agents.research.state import VisualsData, PositioningData, FinancialData, SocialData, SeoGeoData, EventsData, NewsletterData
+        from app.agents.research.state import VisualsData, PositioningData, FinancialData, SocialData, SeoGeoData, EventsData, NewsletterData, WordingData
 
         state = ResearchState(
             competitor_domain="ibm.com",
@@ -234,6 +252,7 @@ if __name__ == "__main__":
             news=NewsData(),
             events=EventsData(),
             newsletter=NewsletterData(),
+            wording=WordingData(),
             errors=[],
             completed_nodes=[],
         )

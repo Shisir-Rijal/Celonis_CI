@@ -77,3 +77,10 @@ class SupabaseError(AppError):
 
 class RepositoryError(SupabaseError):
     """Raised when a repository-level database operation fails."""
+
+# ---------------------------------------------------------------------------
+# Agents
+# ---------------------------------------------------------------------------
+
+class NewsError(AppError):
+    """Raised when all news sources fail and no articles could be fetched."""
