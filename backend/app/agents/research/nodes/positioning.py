@@ -8,7 +8,7 @@ import httpx
 import json
 from openai import AsyncOpenAI
 from firecrawl import V1FirecrawlApp as FirecrawlApp
-from app.agents.research.state import ResearchState, PositioningData
+from app.agents.research.state import ResearchState, PositioningData, BlogData
 from app.config import get_settings
 
 
@@ -75,7 +75,7 @@ async def _extract_employer(markdown: str, openai: AsyncOpenAI) -> dict:
     return json.loads(resp.choices[0].message.content)
 
 
-async def _scrape_blog_posts(listing_markdown: str, openai: AsyncOpenAI) -> list | None:
+async def _scrape_blog_posts(listing_markdown: str, company: str, openai: AsyncOpenAI) -> list | None:
     # Step 1: extract individual blog post URLs from the listing page
     url_resp = await openai.chat.completions.create(
         model="gpt-4o-mini",
@@ -96,7 +96,7 @@ async def _scrape_blog_posts(listing_markdown: str, openai: AsyncOpenAI) -> list
     # Step 2: scrape each post and extract full content
     app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
 
-    async def _scrape_one(url: str) -> dict | None:
+    async def _scrape_one(url: str) -> BlogData | None:
         try:
             scraped = await asyncio.to_thread(app.scrape_url, url, formats=["markdown"])
             md = getattr(scraped, "markdown", None)
@@ -117,8 +117,17 @@ async def _scrape_blog_posts(listing_markdown: str, openai: AsyncOpenAI) -> list
                 response_format={"type": "json_object"},
             )
             data = json.loads(resp.choices[0].message.content)
-            data["source_link"] = url
-            return data
+            return BlogData(
+                company=company,
+                url=url,
+                title=data.get("heading"),
+                source_type="firecrawl",
+                heading=data.get("heading"),
+                subheading=data.get("subheading"),
+                content=data.get("content"),
+                source_link=url,
+                publishing_date=data.get("publishing_date"),
+            )
         except Exception:
             return None
 
@@ -140,10 +149,14 @@ async def _scrape_positioning(domain: str) -> PositioningData:
     about_data, employer_data, blogs = await asyncio.gather(
         _extract_about_company(about_md, openai) if about_md else asyncio.sleep(0, result={}),
         _extract_employer(careers_md, openai) if careers_md else asyncio.sleep(0, result={}),
-        _scrape_blog_posts(blog_md, openai) if blog_md else asyncio.sleep(0, result=None),
+        _scrape_blog_posts(blog_md, company, openai) if blog_md else asyncio.sleep(0, result=None),
     )
 
     return PositioningData(
+        company=company,
+        url=f"https://{domain}/about",
+        title=f"Positioning: {company}",
+        source_type="serper+firecrawl",
         purpose=about_data.get("purpose"),
         vision=about_data.get("vision"),
         mission=about_data.get("mission"),
@@ -152,7 +165,6 @@ async def _scrape_positioning(domain: str) -> PositioningData:
         employer_positioning=employer_data.get("employer_positioning"),
         job_positing_employer_description=employer_data.get("job_positing_employer_description"),
         blogs=blogs,
-        source="serper+firecrawl",
     )
 
 

@@ -191,6 +191,7 @@ def _fetch_newsletters_from_gmail(domain: str, since: str | None = None) -> list
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    company = domain.split(".")[0].capitalize()
     try:
         subscriptions = _load_subscriptions()
         sub_info = subscriptions.get(domain)
@@ -211,8 +212,11 @@ async def run(state: ResearchState) -> dict:
 
         return {
             "newsletter": NewsletterData(
+                company=company,
+                url=f"https://{domain}",
+                title=f"Newsletter: {company}",
+                source_type="gmail",
                 newsletter={"subscribed": sub_info.get("subscribed", False), "items": newsletters},
-                source="gmail",
             ),
             "completed_nodes": ["newsletter"],
         }

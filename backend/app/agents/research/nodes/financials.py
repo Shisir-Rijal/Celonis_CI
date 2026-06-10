@@ -78,12 +78,17 @@ def _get_price_history(ticker: str) -> dict[str, float]:
     }
 
 
-async def _scrape_financials(domain: str) -> FinancialData:
+async def _scrape_financials(domain: str, company: str) -> FinancialData:
     client = finnhub.Client(api_key=settings.FINNHUB_API_KEY)
 
     ticker = _get_symbol(domain)
     if not ticker:
-        return FinancialData(on_stock_market=False, source="finnhub")
+        return FinancialData(
+            company=company,
+            url=f"https://{domain}",
+            title=f"Financials: {company}",
+            on_stock_market=False,
+        )
 
     print(f"Ticker found: {ticker}")
     quote, price_history, (buy, hold, sell) = await asyncio.gather(
@@ -93,6 +98,11 @@ async def _scrape_financials(domain: str) -> FinancialData:
     )
 
     return FinancialData(
+        # --- BaseData: dynamic fields (rest comes from class defaults) ---
+        company=company,
+        url=f"https://finance.yahoo.com/quote/{ticker}",
+        title=f"Financials: {ticker}",
+        # --- FinancialData-specific ---
         on_stock_market=True,
         current_stock_price=quote.get("c"),
         stock_change=quote.get("d"),
@@ -101,15 +111,15 @@ async def _scrape_financials(domain: str) -> FinancialData:
         analyst_hold=hold,
         analyst_sell=sell,
         price_history=price_history,
-        source="finnhub",
     )
 
 
 async def run(state: ResearchState) -> dict:
     logger.info("Run Financials")
     domain = state["competitor_domain"]
-    try: 
-        data = await _scrape_financials(domain)
+    company = domain.split(".")[0].capitalize()
+    try:
+        data = await _scrape_financials(domain, company)
         return {
             "financials": data,
             "completed_nodes": ["financials"],

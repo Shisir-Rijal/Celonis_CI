@@ -6,6 +6,8 @@ from langgraph.graph import START, END, StateGraph
 from app.agents.research.state import ResearchState
 from app.agents.research.nodes import news, financials, visuals, positioning, socials, seogeo, events, newsletter, sociallinks
 
+# Wöchentlich scrapen und manche stündlich oder täglich
+
 graph = StateGraph(ResearchState)
 
 graph.add_node("financials", financials.run)

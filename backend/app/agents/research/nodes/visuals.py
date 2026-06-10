@@ -229,12 +229,13 @@ def _extract_videos(pages: list[tuple[str, str, str]]) -> list[str]:
 async def run(state: ResearchState) -> dict:
     logger.info("Run Visuals")
     domain = state["competitor_domain"]
+    company = domain.split(".")[0].capitalize()
+
     try:
         openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
 
         data = await _get_brand_data(domain)
         pages = await _get_page_contents(domain)
-
 
         logos = _extract_logos(data, pages)
         colors = await _extract_colors(data, pages, openai)
@@ -245,12 +246,14 @@ async def run(state: ResearchState) -> dict:
 
         return {
             "visuals": VisualsData(
+                company=company,
+                url=f"https://{domain}",
+                title=f"Visuals: {company}",
                 logo=logos,
                 colors=colors,
                 fonts=fonts,
                 images=images if images else None,
                 videos=videos,
-                source="brandfetch+firecrawl",
             ),
             "completed_nodes": ["visuals"],
         }

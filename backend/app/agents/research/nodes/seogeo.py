@@ -48,8 +48,9 @@ KEYWORDS = [
 # --- SEO: Google keyword visibility ---
 
 async def _check_seo_keyword(
-    keyword: str, domain: str, client: httpx.AsyncClient
+    keyword: str, domain: str, company: str, client: httpx.AsyncClient
 ) -> SeoKeywordSighting:
+    fallback_url = f"https://www.google.com/search?q={keyword.replace(' ', '+')}"
     try:
         resp = await client.post(
             "https://google.serper.dev/search",
@@ -61,6 +62,9 @@ async def _check_seo_keyword(
         for i, result in enumerate(results, 1):
             if domain in result.get("link", ""):
                 return SeoKeywordSighting(
+                    company=company,
+                    url=result.get("link", fallback_url),
+                    title=f"SEO: {keyword}",
                     keyword=keyword,
                     company_mentioned=True,
                     position=i,
@@ -68,12 +72,18 @@ async def _check_seo_keyword(
                 )
     except Exception as e:
         logger.warning("seo_keyword_failed", keyword=keyword, error=str(e))
-    return SeoKeywordSighting(keyword=keyword, company_mentioned=False)
+    return SeoKeywordSighting(
+        company=company,
+        url=fallback_url,
+        title=f"SEO: {keyword}",
+        keyword=keyword,
+        company_mentioned=False,
+    )
 
 
-async def _seo_keyword_search(domain: str) -> list[SeoKeywordSighting]:
+async def _seo_keyword_search(domain: str, company: str) -> list[SeoKeywordSighting]:
     async with httpx.AsyncClient() as client:
-        tasks = [_check_seo_keyword(kw, domain, client) for kw in KEYWORDS]
+        tasks = [_check_seo_keyword(kw, domain, company, client) for kw in KEYWORDS]
         return list(await asyncio.gather(*tasks))
 
 
@@ -101,7 +111,7 @@ def _build_llm_clients() -> list[tuple[str, AsyncOpenAI, str]]:
 
 
 async def _check_geo_keyword(
-    keyword: str, company: str, client: AsyncOpenAI, llm_name: str, model: str
+    keyword: str, company: str, domain: str, client: AsyncOpenAI, llm_name: str, model: str
 ) -> GeoKeywordSighting:
     for attempt in range(2):
         try:
@@ -121,6 +131,10 @@ async def _check_geo_keyword(
                 end = min(len(answer), idx + 150)
                 context = answer[start:end].strip()
             return GeoKeywordSighting(
+                company=company,
+                url=f"https://{domain}",
+                title=f"GEO: {keyword} ({llm_name})",
+                source_type=f"geo_{llm_name}",
                 keyword=keyword,
                 llm=llm_name,
                 company_mentioned=mentioned,
@@ -138,7 +152,15 @@ async def _check_geo_keyword(
             else:
                 logger.warning("geo_keyword_failed", keyword=keyword, llm=llm_name, error=err)
                 break
-    return GeoKeywordSighting(keyword=keyword, llm=llm_name, company_mentioned=False)
+    return GeoKeywordSighting(
+        company=company,
+        url=f"https://{domain}",
+        title=f"GEO: {keyword} ({llm_name})",
+        source_type=f"geo_{llm_name}",
+        keyword=keyword,
+        llm=llm_name,
+        company_mentioned=False,
+    )
 
 
 _CONCURRENCY = {
@@ -150,22 +172,33 @@ _DELAY_AFTER = {
 }
 
 
-async def _geo_keyword_search(company: str) -> list[GeoKeywordSighting]:
+async def _geo_keyword_search(company: str, domain: str) -> list[GeoKeywordSighting]:
     llm_clients = _build_llm_clients()
     sems = {name: asyncio.Semaphore(_CONCURRENCY.get(name, 5)) for name, _, _ in llm_clients}
     disabled: set[str] = set()
 
+    def _fallback(kw: str, llm_name: str) -> GeoKeywordSighting:
+        return GeoKeywordSighting(
+            company=company,
+            url=f"https://{domain}",
+            title=f"GEO: {kw} ({llm_name})",
+            source_type=f"geo_{llm_name}",
+            keyword=kw,
+            llm=llm_name,
+            company_mentioned=False,
+        )
+
     async def _throttled(kw: str, client: AsyncOpenAI, llm_name: str, model: str) -> GeoKeywordSighting:
         if llm_name in disabled:
-            return GeoKeywordSighting(keyword=kw, llm=llm_name, company_mentioned=False)
+            return _fallback(kw, llm_name)
         async with sems[llm_name]:
             try:
-                result = await _check_geo_keyword(kw, company, client, llm_name, model)
+                result = await _check_geo_keyword(kw, company, domain, client, llm_name, model)
             except RuntimeError as e:
                 if "daily_quota_exhausted" in str(e):
                     logger.warning("geo_llm_disabled", llm=llm_name, reason="daily_quota_exhausted")
                     disabled.add(llm_name)
-                return GeoKeywordSighting(keyword=kw, llm=llm_name, company_mentioned=False)
+                return _fallback(kw, llm_name)
             if delay := _DELAY_AFTER.get(llm_name):
                 await asyncio.sleep(delay)
             return result
@@ -179,7 +212,7 @@ async def _geo_keyword_search(company: str) -> list[GeoKeywordSighting]:
     n = len(llm_clients)
     return [
         r if isinstance(r, GeoKeywordSighting)
-        else GeoKeywordSighting(keyword=KEYWORDS[i // n], llm="unknown", company_mentioned=False)
+        else _fallback(KEYWORDS[i // n], "unknown")
         for i, r in enumerate(results)
     ]
 
@@ -193,15 +226,14 @@ async def run(state: ResearchState) -> dict:
 
     try:
         seo_sightings, geo_sightings = await asyncio.gather(
-            _seo_keyword_search(domain),
-            _geo_keyword_search(company),
+            _seo_keyword_search(domain, company),
+            _geo_keyword_search(company, domain),
         )
 
         return {
             "seogeo": SeoGeoData(
                 seo=seo_sightings,
                 geo=geo_sightings,
-                source="serper+openai",
             ),
             "completed_nodes": ["seogeo"],
         }

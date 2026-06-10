@@ -23,18 +23,20 @@ today = date.today().strftime("%Y-%m-%d")
 
 # --- Quelle 1: Finnhub ---
 
-def _get_finnhub_news(ticker: str) -> list[NewsItem]:
+def _get_finnhub_news(ticker: str, company: str, domain: str) -> list[NewsItem]:
     client = finnhub.Client(api_key=get_settings().FINNHUB_API_KEY)
     raw = client.company_news(ticker, _from=today, to=today)
 
     return [
         NewsItem(
+            company=company,
+            url=item.get("url") or f"https://{domain}",
+            title=item.get("headline"),
+            source_type="finnhub",
             heading=item.get("headline"),
             summary=item.get("summary"),
-            source=item.get("source"),
-            source_link=item.get("url"),
             image=item.get("image"),
-            date=today,
+            published_date=today,
         )
         for item in raw
     ]
@@ -64,8 +66,7 @@ async def _scrape_article_text(url: str, app: FirecrawlApp, openai: AsyncOpenAI)
         return None
 
 
-async def _get_serper_news(domain: str) -> list[NewsItem]:
-    company = domain.replace(".com", "").replace(".io", "")
+async def _get_serper_news(domain: str, company: str) -> list[NewsItem]:
     all_raw = []
 
     queries = [
@@ -105,13 +106,15 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
 
     return [
         NewsItem(
+            company=company,
+            url=item.get("link") or f"https://{domain}",
+            title=item.get("title"),
+            source_type="serper",
             heading=item.get("title"),
             text=text_map.get(item.get("link")),
             summary=item.get("snippet"),
-            source="serper",
-            source_link=item.get("link"),
             image=item.get("imageUrl") if (item.get("imageUrl") or "").startswith("http") else None,
-            date=item.get("date", today),
+            published_date=item.get("date", today),
         )
         for item in unique
     ]
@@ -119,7 +122,7 @@ async def _get_serper_news(domain: str) -> list[NewsItem]:
 
 # --- Quelle 3: Firecrawl ---
 
-async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
+async def _get_firecrawl_news(domain: str, company: str) -> list[NewsItem]:
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://google.serper.dev/search",
@@ -178,12 +181,14 @@ async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
             )
             data = json.loads(resp.choices[0].message.content)
             return NewsItem(
+                company=company,
+                url=url,
+                title=data.get("heading"),
+                source_type="firecrawl",
                 heading=data.get("heading"),
                 text=data.get("text"),
                 author=data.get("author"),
-                source="firecrawl",
-                source_link=url,
-                date=data.get("date", today),
+                published_date=data.get("date", today),
             )
         except Exception:
             return None
@@ -194,22 +199,23 @@ async def _get_firecrawl_news(domain: str) -> list[NewsItem]:
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    company = domain.split(".")[0].capitalize()
     try:
         all_news: list[NewsItem] = []
 
         # Finnhub
         ticker = _get_symbol(domain)
         if ticker:
-            all_news += _get_finnhub_news(ticker)
+            all_news += _get_finnhub_news(ticker, company, domain)
 
         # Serper
-        all_news += await _get_serper_news(domain)
+        all_news += await _get_serper_news(domain, company)
 
         # Firecrawl
-        all_news += await _get_firecrawl_news(domain)
+        all_news += await _get_firecrawl_news(domain, company)
 
         return {
-            "news": NewsData(news=all_news, source="finnhub+serper+firecrawl"),
+            "news": NewsData(news=all_news),
             "completed_nodes": ["news"],
         }
     except Exception as e:

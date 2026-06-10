@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from app.agents.research.state import ResearchState, EventsData
+from app.agents.research.state import ResearchState, EventsData, EventItem
 from app.config import get_settings
 from pydantic import BaseModel
 from firecrawl import V1FirecrawlApp as FirecrawlApp
@@ -11,50 +11,44 @@ import asyncio
 from openai import AsyncOpenAI
 import structlog
 import httpx
-from datetime import date
 
 
 logger = structlog.get_logger(__name__)
-today = date.today().strftime("%Y-%m-%d")
-
-
-class EventItem(BaseModel):
-    name: str | None = None
-    start_date: str | None = None
-    end_date: str | None = None
-    start_time: str | None = None
-    end_time: str | None = None
-    attendees: int | None = None
-    location: str | None = None
-    topic: str | None = None
-    organized_by: str | None = None
-    sponsors: list[str] | None = None
-    speakers: list[str] | None = None
-    summary: str | list[str] | None = None
-    source: str | None = None
-    source_link: str | None = None
-    image: str | None = None
-    video: str | None = None
-    date: str | None = today
 
 
 
-def _extract_event_items(raw_items: list[dict], source: str) -> list[EventItem]:
+_SOURCE_ORIGIN = {
+    "website": "owned",
+    "meetup": "third_party",
+    "luma": "third_party",
+    "google": "earned",
+    "news": "earned",
+}
+
+
+def _extract_event_items(raw_items: list[dict], source: str, company: str, domain: str) -> list[EventItem]:
     return [
         _normalize_location(EventItem(
+            # --- BaseData: dynamic fields ---
+            company=company,
+            url=item.get("source_link") or f"https://{domain}",
+            title=item.get("name"),
+            source_type=source,
+            source_origin=_SOURCE_ORIGIN.get(source, "earned"),
+            # --- EventItem-specific ---
             name=item.get("name"),
+            event_date=item.get("start_date"),
             start_date=item.get("start_date"),
             end_date=item.get("end_date"),
             start_time=item.get("start_time"),
             end_time=item.get("end_time"),
             attendees=item.get("attendees"),
             location=item.get("location"),
-            topic=item.get("topic"),
+            event_topic=item.get("topic"),
             organized_by=item.get("organized_by"),
             sponsors=item.get("sponsors"),
             speakers=item.get("speakers"),
             summary=item.get("summary"),
-            source=source,
             source_link=item.get("source_link"),
             image=img if (img := item.get("image")) and img.startswith("http") else None,
             video=item.get("video"),
@@ -69,7 +63,7 @@ _ONLINE_KEYWORDS = {"webinar", "virtual", "online", "call", "livestream", "live 
 def _normalize_location(event: EventItem) -> EventItem:
     if not event.location:
         name_lower = (event.name or "").lower()
-        topic_lower = (event.topic or "").lower()
+        topic_lower = (event.event_topic or "").lower()
         if any(kw in name_lower or kw in topic_lower for kw in _ONLINE_KEYWORDS):
             event.location = "Online"
     return event
@@ -112,7 +106,7 @@ async def _openai_extract_events(content: str, openai: AsyncOpenAI, source_url: 
 
 # --- Quelle 1: Company-Website ---
 
-async def _scrape_events_from_domain(domain: str, openai: AsyncOpenAI) -> list[EventItem]:
+async def _scrape_events_from_domain(domain: str, company: str, openai: AsyncOpenAI) -> list[EventItem]:
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://google.serper.dev/search",
@@ -138,7 +132,7 @@ async def _scrape_events_from_domain(domain: str, openai: AsyncOpenAI) -> list[E
             continue
 
         items = await _openai_extract_events(scraped.markdown, openai, source_url=url)
-        events = _extract_event_items(items, source="website")
+        events = _extract_event_items(items, source="website", company=company, domain=domain)
 
         for event in events:
             if not event.source_link:
@@ -151,7 +145,7 @@ async def _scrape_events_from_domain(domain: str, openai: AsyncOpenAI) -> list[E
 
 # --- Quelle 2: Meetup + Luma ---
 
-async def _scrape_platform(source: str, url: str, openai: AsyncOpenAI) -> list[EventItem]:
+async def _scrape_platform(source: str, url: str, company: str, domain: str, openai: AsyncOpenAI) -> list[EventItem]:
     app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
     try:
         scraped = await asyncio.to_thread(app.scrape_url, url, formats=["markdown", "rawHtml"])
@@ -162,7 +156,7 @@ async def _scrape_platform(source: str, url: str, openai: AsyncOpenAI) -> list[E
         return []
 
     items = await _openai_extract_events(scraped.markdown, openai, source_url=url)
-    events = _extract_event_items(items, source=source)
+    events = _extract_event_items(items, source=source, company=company, domain=domain)
 
     for event in events:
         if not event.source_link:
@@ -171,8 +165,7 @@ async def _scrape_platform(source: str, url: str, openai: AsyncOpenAI) -> list[E
     return events
 
 
-async def _scrape_events_from_others(domain: str, openai: AsyncOpenAI) -> list[EventItem]:
-    company = domain.replace(".com", "").replace(".io", "")
+async def _scrape_events_from_others(domain: str, company: str, openai: AsyncOpenAI) -> list[EventItem]:
     all_events: list[EventItem] = []
 
     platform_queries = {
@@ -196,7 +189,7 @@ async def _scrape_events_from_others(domain: str, openai: AsyncOpenAI) -> list[E
         if not results:
             continue
         url = results[0]["link"]
-        events = await _scrape_platform(source, url, openai)
+        events = await _scrape_platform(source, url, company, domain, openai)
         all_events.extend(events)
 
     # Google general search — pass structured data (title + snippet + link + image)
@@ -214,7 +207,7 @@ async def _scrape_events_from_others(domain: str, openai: AsyncOpenAI) -> list[E
             for r in google_items
         ], ensure_ascii=False)
         items = await _openai_extract_events(structured, openai)
-        events = _extract_event_items(items, source="google")
+        events = _extract_event_items(items, source="google", company=company, domain=domain)
         links_by_title = {r.get("title", "").lower(): r.get("link") for r in google_items}
         for event in events:
             if not event.source_link:
@@ -236,7 +229,7 @@ async def _scrape_events_from_others(domain: str, openai: AsyncOpenAI) -> list[E
             for r in news_items
         ], ensure_ascii=False)
         items = await _openai_extract_events(structured, openai)
-        events = _extract_event_items(items, source="news")
+        events = _extract_event_items(items, source="news", company=company, domain=domain)
         links_by_title = {r.get("title", "").lower(): r.get("link") for r in news_items}
         for event in events:
             if not event.source_link:
@@ -248,20 +241,20 @@ async def _scrape_events_from_others(domain: str, openai: AsyncOpenAI) -> list[E
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    company = domain.split(".")[0].capitalize()
     try:
         openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
         domain_events, other_events = await asyncio.gather(
-            _scrape_events_from_domain(domain, openai),
-            _scrape_events_from_others(domain, openai),
+            _scrape_events_from_domain(domain, company, openai),
+            _scrape_events_from_others(domain, company, openai),
         )
 
         return {
             "events": EventsData(
                 website_events=domain_events,
-                meetup_events=[e for e in other_events if e.source == "meetup"],
-                luma_events=[e for e in other_events if e.source == "luma"],
-                reported_events=[e for e in other_events if e.source in ("google", "news")],
-                source="serper+firecrawl",
+                meetup_events=[e for e in other_events if e.source_type == "meetup"],
+                luma_events=[e for e in other_events if e.source_type == "luma"],
+                reported_events=[e for e in other_events if e.source_type in ("google", "news")],
             ),
             "completed_nodes": ["events"],
         }

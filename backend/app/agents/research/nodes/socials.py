@@ -2,10 +2,10 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
+import asyncio
 import structlog
 import httpx
-from pydantic import BaseModel
-from app.agents.research.state import ResearchState, SocialData
+from app.agents.research.state import ResearchState, SocialData, YoutubeChannelData, YtSearchData
 from app.agents.shared.utils.brandfetch import _get_brand_data
 from app.config import get_settings
 from app.agents.shared.utils.youtube import _scrape_yt_content_by_search_for, VideoData
@@ -38,14 +38,6 @@ async def _scrape_social_links(domain: str) -> dict[str, str]:
 
 
 
-class YoutubeContent(BaseModel): 
-    subscribers: int | None = None
-    video_count : int | None = None
-    description: str | None = None
-    own_videos: list[VideoData] = []
-
-
-
 def _channel_param_from_url(url: str) -> dict:
     """Leitet den richtigen API-Parameter aus der YouTube-URL ab."""
     if "/@" in url:
@@ -66,7 +58,7 @@ def _channel_param_from_url(url: str) -> dict:
     return {}
 
 
-async def _scrape_yt_content_about_(youtube_url: str) -> YoutubeContent | None:
+async def _scrape_yt_content_about_(youtube_url: str, company: str, domain: str) -> YoutubeChannelData | None:
     api_key = get_settings().YOUTUBE_API_KEY
     if not api_key or not youtube_url:
         return None
@@ -128,7 +120,10 @@ async def _scrape_yt_content_about_(youtube_url: str) -> YoutubeContent | None:
             comment_count=int(st["commentCount"]) if st.get("commentCount") else None,
         ))
 
-    return YoutubeContent(
+    return YoutubeChannelData(
+        company=company,
+        url=youtube_url,
+        title=f"YouTube: {company}",
         subscribers=int(stats["subscriberCount"]) if stats.get("subscriberCount") else None,
         video_count=int(stats["videoCount"]) if stats.get("videoCount") else None,
         description=snippet.get("description"),
@@ -137,23 +132,32 @@ async def _scrape_yt_content_about_(youtube_url: str) -> YoutubeContent | None:
 
 
 async def run(state: ResearchState) -> dict:
-    domain = state["competitor_domain"]
-    company = domain.replace(".com", "").replace(".io", "")
     logger.info("Run Socials")
+    domain = state["competitor_domain"]
+    company = domain.split(".")[0].capitalize()
 
     try:
         social_links = await _scrape_social_links(domain)
         youtube_url = social_links.get("youtube")
-        youtube_content = await _scrape_yt_content_about_(youtube_url) if youtube_url else None
-        search_results = await _scrape_yt_content_by_search_for(company)
+        youtube_channel, search_results = await asyncio.gather(
+            _scrape_yt_content_about_(youtube_url, company, domain) if youtube_url else asyncio.sleep(0, result=None),
+            _scrape_yt_content_by_search_for(company),
+        )
 
         return {
             "socials": SocialData(
+                company=company,
+                url=f"https://{domain}",
+                title=f"Socials: {company}",
                 social_links=social_links or None,
-                youtube_content=youtube_content or None,
-                yt_search_results=search_results or None,
-                source="brandfetch",
             ),
+            "youtube_channel": youtube_channel,
+            "yt_search": YtSearchData(
+                company=company,
+                url=f"https://www.youtube.com/results?search_query={company}",
+                title=f"YouTube Search: {company}",
+                videos=search_results or [],
+            ) if search_results else None,
             "completed_nodes": ["socials"],
         }
     except Exception as e:
