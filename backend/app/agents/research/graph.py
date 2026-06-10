@@ -2,49 +2,65 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from typing import Any, Callable
 from langgraph.graph import START, END, StateGraph
 from app.agents.research.state import ResearchState
-from app.agents.research.nodes import news, financials, visuals, positioning, socials, seogeo, events, newsletter, sociallinks
+from app.agents.research.nodes import (
+    news, financials, visuals, positioning,
+    socials, seogeo, events, newsletter, youtube, wording,
+)
 
-# Wöchentlich scrapen und manche stündlich oder täglich
 
-graph = StateGraph(ResearchState)
+def _build(node_map: dict[str, Callable]) -> Any:
+    g = StateGraph(ResearchState)
+    for name, fn in node_map.items():
+        g.add_node(name, fn)
+        g.add_edge(START, name)
+        g.add_edge(name, END)
+    return g.compile()
 
-graph.add_node("financials", financials.run)
-graph.add_node("seogeo", seogeo.run)
-graph.add_node("news", news.run)
-graph.add_node("socials", socials.run)
-graph.add_node("positioning", positioning.run)
-graph.add_node("visuals", visuals.run)
-graph.add_node("events", events.run)
-graph.add_node("newsletter", newsletter.run)
 
-for node in ["financials", "seogeo", "news", "socials", "positioning", "visuals", "events", "newsletter"]:
-    graph.add_edge(START, node)
-    graph.add_edge(node, END)
+# --- Tier graphs — invoke the matching graph on each cadence ---
 
-app = graph.compile()
+daily_graph = _build({
+    "financials": financials.run,
+})
+
+weekly_graph = _build({
+    "news": news.run,
+})
+
+monthly_graph = _build({
+    "events":     events.run,
+    "seogeo":     seogeo.run,
+    "newsletter": newsletter.run,
+    "youtube":    youtube.run,
+})
+
+semiannual_graph = _build({
+    "visuals":     visuals.run,
+    "positioning": positioning.run,
+    "socials":     socials.run,
+    "wording":     wording.run,   # stub — replace once wording.py is implemented
+})
 
 
 if __name__ == "__main__":
     import asyncio
-    from app.agents.research.state import CompetitorProfile
     import structlog
-    structlog.configure(
-        processors=[
-            structlog.dev.ConsoleRenderer()
-        ]
-    )
+    structlog.configure(processors=[structlog.dev.ConsoleRenderer()])
 
     async def main():
-        initial_state = ResearchState(
-            competitor_domain="celonis.com",
-            profile=CompetitorProfile(domain="celonis.com"),
-            errors=[],
-            completed_nodes=[],
-        )
-        result = await app.ainvoke(initial_state)
+        # Minimal initial state — tier graphs only write their own keys
+        initial_state: ResearchState = {
+            "competitor_domain": "celonis.com",
+            "errors": [],
+            "completed_nodes": [],
+        }
+        result = await daily_graph.ainvoke(initial_state)
         print("Completed:", result["completed_nodes"])
-        print("Errors:", result["errors"])
+        print("Errors:",    result["errors"])
+        if result.get("financials"):
+            print(result["financials"].model_dump_json(indent=2))
 
     asyncio.run(main())

@@ -210,13 +210,15 @@ class SocialData(BaseData):
     social_links: dict[str, str] | None = None
 
 
+# --Youtube-Node:
+
 class YoutubeChannelData(BaseData):
     # owned channel data from YouTube Data API
     source_origin: Literal["owned", "earned", "third_party", "internal"] = "owned"
-    content_type: Literal["text"] = "text"
-    chunking_strategy: Literal["structural"] = "structural"  # structured API response
-    topic: list[str] = Field(default_factory=lambda: ["youtube", "social_media"])
     source_type: str | None = "youtube_api"
+    content_type: Literal["text"] = "text"
+    chunking_strategy: Literal["structural"] = "structural"
+    topic: list[str] = Field(default_factory=lambda: ["youtube", "social_media"])
 
     subscribers: int | None = None
     video_count: int | None = None
@@ -227,12 +229,18 @@ class YoutubeChannelData(BaseData):
 class YtSearchData(BaseData):
     # third-party YouTube search results about the company
     source_origin: Literal["owned", "earned", "third_party", "internal"] = "third_party"
-    content_type: Literal["text"] = "text"
-    chunking_strategy: Literal["structural"] = "structural"  # structured API response
-    topic: list[str] = Field(default_factory=lambda: ["youtube", "social_media"])
     source_type: str | None = "youtube_search"
+    content_type: Literal["text"] = "text"
+    chunking_strategy: Literal["structural"] = "structural"
+    topic: list[str] = Field(default_factory=lambda: ["youtube", "social_media"])
 
     videos: list[VideoData] = []
+
+
+class YoutubeData(BaseModel):
+    # container — mirrors SeoGeoData pattern
+    channel: YoutubeChannelData | None = None
+    search: YtSearchData | None = None
 
 
 # --Visuals-Node:
@@ -278,8 +286,7 @@ class ResearchState(TypedDict):
     positioning: PositioningData
     financials: FinancialData
     socials: SocialData
-    youtube_channel: YoutubeChannelData | None
-    yt_search: YtSearchData | None
+    youtube: YoutubeData | None
     seogeo: SeoGeoData
     news: NewsData
     events: EventsData
@@ -299,8 +306,7 @@ class CompetitorProfile(BaseModel):
     positioning: PositioningData | None = None
     financials: FinancialData | None = None
     socials: SocialData | None = None
-    youtube_channel: YoutubeChannelData | None = None
-    yt_search: YtSearchData | None = None
+    youtube: YoutubeData | None = None
     newsletter: NewsletterData | None = None
     wording: WordingData | None = None
     # Container models have safe empty defaults
@@ -312,15 +318,14 @@ class CompetitorProfile(BaseModel):
     def from_state(cls, state: ResearchState) -> "CompetitorProfile":
         return cls(
             domain=state["competitor_domain"],
-            visuals=state["visuals"],
-            positioning=state["positioning"],
-            financials=state["financials"],
-            socials=state["socials"],
-            youtube_channel=state.get("youtube_channel"),
-            yt_search=state.get("yt_search"),
-            seogeo=state["seogeo"],
-            news=state["news"],
-            events=state["events"],
-            newsletter=state["newsletter"],
+            visuals=state.get("visuals"),
+            positioning=state.get("positioning"),
+            financials=state.get("financials"),
+            socials=state.get("socials"),
+            youtube=state.get("youtube"),
+            seogeo=state.get("seogeo") or SeoGeoData(),
+            news=state.get("news") or NewsData(),
+            events=state.get("events") or EventsData(),
+            newsletter=state.get("newsletter"),
             wording=state.get("wording"),
         )
