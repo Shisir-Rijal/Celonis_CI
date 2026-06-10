@@ -12,7 +12,7 @@ class ChunkMetadata(BaseModel):
     date: datetime
     url: str
     title: str | None
-    language: str
+    language: str | None
     topic: list[str]
     content_type: Literal["text", "image", "transcript"]
     visual_type: str | None
