@@ -66,3 +66,21 @@ async def test_memory_load_session_id_none() -> None:
 
         mock_load.assert_not_called()
         assert result == {"conversation_history": []}
+
+
+@pytest.mark.asyncio
+async def test_memory_load_propagates_exception() -> None:
+    """If load_conversation_history raises, the exception propagates
+    out of the node — no silent swallowing."""
+    session_id = uuid4()
+
+    with patch(
+        "app.orchestration.nodes.memory_load.load_conversation_history",
+        side_effect=Exception("Supabase unreachable"),
+    ):
+        state = {
+            "session_id": session_id,
+            "query": "What is Celonis?",
+        }
+        with pytest.raises(Exception, match="Supabase unreachable"):
+            await memory_load_node(state)
