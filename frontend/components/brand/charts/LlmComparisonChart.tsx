@@ -135,15 +135,6 @@ export default function LlmComparisonChart({ data }: LlmComparisonChartProps) {
         </BarChart>
       </ResponsiveContainer>
 
-      {data.length === 1 && (
-        <p
-          className="mt-3 text-[11px] text-neutral-grey-20 border-l-2 border-neutral-grey-10 pl-3"
-          style={CHART_FONT}
-        >
-          Only GPT-4o mini active. Add a Gemini API key to enable multi-LLM
-          comparison.
-        </p>
-      )}
     </div>
   );
 }

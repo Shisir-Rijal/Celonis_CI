@@ -124,7 +124,7 @@ function FilterBar({
         onChange={(e) => onChange({ ...filters, tier: e.target.value })}
       >
         <option value="">All Tiers</option>
-        <option value="brand_category">Brand & Category</option>
+        <option value="brand_category">Brand</option>
         <option value="use_case">Use Case</option>
         <option value="competitor_trigger">Competitor Trigger</option>
       </select>
@@ -283,7 +283,7 @@ export default function KeywordTable({ rows }: KeywordTableProps) {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-black/8">
-              {["Keyword", "Tier", "Mentioned", "Strength", "Framing", "Counter"].map(
+              {["Keyword", "Tier", "Mentioned", "Strength", "Framing", "Criticism"].map(
                 (h) => (
                   <th
                     key={h}

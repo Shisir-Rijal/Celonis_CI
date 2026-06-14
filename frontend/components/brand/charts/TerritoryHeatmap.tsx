@@ -8,7 +8,7 @@ const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
 const CHART_FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 const TIER_LABELS: Record<string, string> = {
-  brand_category: "Brand & Category",
+  brand_category: "Brand",
   use_case: "Use Case",
   competitor_trigger: "Competitor Trigger",
 };

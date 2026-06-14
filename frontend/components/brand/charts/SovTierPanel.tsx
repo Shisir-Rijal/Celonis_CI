@@ -137,7 +137,7 @@ export default function SovTierPanel({ tier }: SovTierPanelProps) {
         style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
       >
         {tier.total_keywords} keyword{tier.total_keywords !== 1 ? "s" : ""} in
-        this tier · count = keyword appearances
+        this tier · count = mentions
       </p>
     </div>
   );

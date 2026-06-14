@@ -221,15 +221,6 @@ export default function GeoTrendChart({ series }: GeoTrendChartProps) {
         </LineChart>
       </ResponsiveContainer>
 
-      {hasDummy && (
-        <p
-          className="mt-3 text-[11px] text-neutral-grey-20 border-l-2 border-neutral-grey-10 pl-3"
-          style={CHART_FONT}
-        >
-          Dashed segment is a synthetic baseline — only one real run exists.
-          Values stabilise with weekly runs.
-        </p>
-      )}
     </div>
   );
 }
