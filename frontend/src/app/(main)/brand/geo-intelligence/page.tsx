@@ -48,7 +48,7 @@ function DeepDiveZone({ data }: { data: DeepDiveResponse }) {
             category="Critical Gap"
             text={alerts.critical_gap}
             priority="high"
-            recommendation="Address this territory before the next pipeline run."
+            recommendation="Address this territory in the next messaging update."
           />
         ) : (
           <DashboardCard label="Critical Gap">
@@ -85,7 +85,7 @@ function DeepDiveZone({ data }: { data: DeepDiveResponse }) {
       {/* Keyword table */}
       <DashboardCard
         label="Keyword performance"
-        sublabel={`${keyword_rows.length} keywords · click any row to see the AI response excerpt`}
+        sublabel={`${keyword_rows.length} keywords · Click any row to see the AI response excerpt`}
       >
         <KeywordTable rows={keyword_rows} />
       </DashboardCard>
@@ -186,7 +186,7 @@ export default function GeoIntelligencePage() {
       <section>
         <SectionHeader
           label="Visibility at a glance"
-          description="Four headline metrics measured against the last pipeline run."
+          description="Four headline metrics from the latest analysis run."
         />
         {intel.isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -293,7 +293,7 @@ export default function GeoIntelligencePage() {
           </DashboardCard>
           <DashboardCard
             label="LLM Comparison"
-            sublabel="Mention rate per assistant in the latest run"
+            sublabel="Mention rate per AI model in the latest run"
           >
             {intel.isLoading ? (
               <ZoneSkeleton height={260} />
@@ -314,7 +314,7 @@ export default function GeoIntelligencePage() {
       <section>
         <SectionHeader
           label="AI share of voice"
-          description="Top brands surfaced alongside, split by keyword tier."
+          description="Top companies surfaced alongside, split by keyword tier."
         />
         {sov.isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -332,7 +332,7 @@ export default function GeoIntelligencePage() {
               <DashboardCard
                 key={tier.tier}
                 label={tier.label}
-                sublabel={`Top co-mentioned brands — ${tier.total_keywords} keywords`}
+                sublabel={`Top co-mentioned companies · ${tier.total_keywords} keywords`}
               >
                 <SovTierPanel tier={tier} />
               </DashboardCard>
@@ -347,12 +347,12 @@ export default function GeoIntelligencePage() {
       <section>
         <SectionHeader
           label="Strategic maps"
-          description="Who we are surfaced with, and where the use-case territory sits."
+          description="Which companies appear alongside us, and which use-case territories we own."
         />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <DashboardCard
             label="Competitive Set Map"
-            sublabel="Co-mentioned brands — node size = frequency"
+            sublabel="Co-mentioned companies · node size = frequency"
           >
             {maps.isLoading ? (
               <ZoneSkeleton height={320} />
