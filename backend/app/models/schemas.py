@@ -28,11 +28,10 @@ class Chunk(BaseModel):
     """
     id: UUID
     content: str
-    context_header: str
+    context_header: str = ""
     metadata: ChunkMetadata
     embedding: list[float] | None
     created_at: datetime | None
-    context_header: str = ""
     document_id: UUID | None = None
     relevance_score: float | None = None
 
