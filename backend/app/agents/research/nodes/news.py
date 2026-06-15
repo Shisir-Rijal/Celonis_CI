@@ -11,8 +11,9 @@ import json
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 from pydantic import BaseModel
 from app.config import get_settings
-from datetime import date
+from datetime import date, datetime, timezone
 from app.agents.shared.utils.finnhub import _get_symbol
+from app.agents.research.repositories.research_repository import insert_research_snapshot
 from openai import AsyncOpenAI
 
 
@@ -97,12 +98,12 @@ async def _get_serper_news(domain: str, company: str) -> list[NewsItem]:
     app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
     openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
 
-    # scrape full text for up to 5 articles in parallel
+    # scrape full text for up to 15 articles in parallel
     texts = await asyncio.gather(*[
         _scrape_article_text(item["link"], app, openai)
-        for item in unique[:5]
+        for item in unique[:15]
     ])
-    text_map = {item["link"]: text for item, text in zip(unique[:5], texts)}
+    text_map = {item["link"]: text for item, text in zip(unique[:15], texts)}
 
     return [
         NewsItem(
@@ -214,8 +215,13 @@ async def run(state: ResearchState) -> dict:
         # Firecrawl
         all_news += await _get_firecrawl_news(domain, company)
 
+        news_data = NewsData(news=all_news)
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "news", news_data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="news", error=str(db_err))
         return {
-            "news": NewsData(news=all_news),
+            "news": news_data,
             "completed_nodes": ["news"],
         }
     except Exception as e:

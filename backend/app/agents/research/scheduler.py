@@ -28,6 +28,7 @@ from app.agents.research.graph import (
     semiannual_graph,
 )
 from app.config import get_settings
+from app.rag.supabase_client import get_supabase
 
 logger = structlog.get_logger(__name__)
 
@@ -37,11 +38,10 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 async def _get_tracked_domains() -> list[str]:
-    """Return all competitor domains to be scraped.
-
-    TODO: replace with a Supabase query once the competitors table exists.
-    """
-    return []
+    """Return all active competitor domains from the competitors table."""
+    db = get_supabase()
+    resp = db.table("competitors").select("domain").eq("active", True).execute()
+    return [row["domain"] for row in resp.data]
 
 
 # ---------------------------------------------------------------------------

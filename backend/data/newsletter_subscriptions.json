@@ -2,6 +2,11 @@
   "celonis.com": {
     "subscribed": true,
     "subscribed_at": "2026-05-28",
-    "last_checked": "2026-05-28"
+    "last_checked": "2026-06-15"
+  },
+  "uipath.com": {
+    "subscribed": true,
+    "subscribed_at": "2026-06-14",
+    "last_checked": "2026-06-15"
   }
 }

@@ -6,9 +6,11 @@ import asyncio
 import structlog
 import httpx
 import json
+from datetime import datetime, timezone
 from openai import AsyncOpenAI
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 from app.agents.research.state import ResearchState, PositioningData, BlogData
+from app.agents.research.repositories.research_repository import insert_research_snapshot
 from app.config import get_settings
 
 
@@ -172,6 +174,10 @@ async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
     try:
         data = await _scrape_positioning(domain)
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "positioning", data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="positioning", error=str(db_err))
         return {
             "positioning": data,
             "completed_nodes": ["positioning"],

@@ -1,7 +1,9 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from datetime import datetime, timezone
 from app.agents.research.state import ResearchState, FinancialData
+from app.agents.research.repositories.research_repository import insert_research_snapshot
 from app.agents.shared.utils.finnhub import _get_symbol
 from app.config import get_settings
 import finnhub
@@ -120,6 +122,10 @@ async def run(state: ResearchState) -> dict:
     company = domain.split(".")[0].capitalize()
     try:
         data = await _scrape_financials(domain, company)
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "financials", data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="financials", error=str(db_err))
         return {
             "financials": data,
             "completed_nodes": ["financials"],
