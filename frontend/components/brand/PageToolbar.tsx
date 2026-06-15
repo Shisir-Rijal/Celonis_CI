@@ -26,7 +26,7 @@ export default function PageToolbar({
       {updatedAt ? (
         <div className="flex items-center gap-1.5 text-neutral-grey-20">
           <span className="text-xs">Updated</span>
-          <span className="text-primary-black font-medium">{updatedAt}</span>
+          <span className="text-primary-white font-medium">{updatedAt}</span>
         </div>
       ) : null}
 
@@ -37,7 +37,7 @@ export default function PageToolbar({
             <span className="relative inline-flex h-2 w-2 rounded-full bg-secondary-green" />
           </span>
           <span>
-            <span className="text-primary-black font-medium">
+            <span className="text-primary-white font-medium">
               {agentsRunning}
             </span>{" "}
             {agentsRunning === 1 ? "agent" : "agents"} running

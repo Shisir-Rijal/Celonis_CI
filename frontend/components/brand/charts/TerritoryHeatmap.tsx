@@ -46,7 +46,7 @@ function TerritoryBadge({
         <span className="text-[10px] tracking-[0.12em] uppercase text-neutral-grey-20 font-medium">
           {label}:{" "}
         </span>
-        <span className="text-[11px] text-primary-black">
+        <span className="text-[11px] text-primary-white">
           {items.slice(0, 3).join(", ")}
           {items.length > 3 ? ` +${items.length - 3}` : ""}
         </span>
@@ -67,7 +67,7 @@ export default function TerritoryHeatmap({ data }: TerritoryHeatmapProps) {
 
   if (!rows.length) {
     return (
-      <div className="flex flex-col items-center justify-center h-[220px] gap-2">
+      <div className="flex flex-col items-center justify-center h-55 gap-2">
         <p className="text-sm text-neutral-grey-20">No territory data yet.</p>
       </div>
     );

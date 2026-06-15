@@ -10,7 +10,7 @@ export function ZoneSkeleton({ height = 200 }: { height?: number }) {
     <DashboardCard className="animate-pulse">
       <div
         style={{ height }}
-        className="w-full rounded-md bg-neutral-grey-00"
+        className="w-full rounded-md bg-white/8"
       />
     </DashboardCard>
   );

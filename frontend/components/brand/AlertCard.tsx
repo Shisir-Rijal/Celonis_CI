@@ -28,9 +28,9 @@ const priorityStyles: Record<
     icon: "text-warning",
   },
   low: {
-    chipBg: "bg-neutral-grey-00",
-    chipText: "text-neutral-grey-20",
-    icon: "text-neutral-grey-20",
+    chipBg: "bg-white/10",
+    chipText: "text-neutral-grey-10",
+    icon: "text-neutral-grey-10",
   },
 };
 
@@ -52,7 +52,7 @@ export default function AlertCard({
   return (
     <DashboardCard className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <span className="text-[11px] tracking-[0.16em] uppercase text-neutral-grey-20 font-medium">
+        <span className="text-[11px] tracking-[0.16em] uppercase text-neutral-grey-10 font-medium">
           {category}
         </span>
         <span
@@ -68,13 +68,13 @@ export default function AlertCard({
         </span>
       </div>
 
-      <p className="text-sm text-primary-black leading-relaxed">{text}</p>
+      <p className="text-sm text-primary-white leading-relaxed">{text}</p>
 
       {recommendation ? (
         <div
           className={twMerge(
             clsx(
-              "flex items-start gap-2 text-sm border-t border-black/5 pt-3",
+              "flex items-start gap-2 text-sm border-t border-white/8 pt-3",
               styles.icon
             )
           )}

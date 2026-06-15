@@ -14,7 +14,7 @@ const variantStyles = {
   primary:
     "bg-primary-black text-primary-white hover:opacity-90 active:opacity-80",
   secondary:
-    "bg-primary-white text-primary-black hover:bg-natural-20 hover:text-primary-white",
+    "bg-neutral-grey-30 text-primary-white border border-white/10 hover:bg-white/10",
 };
 
 const sizeStyles = {
