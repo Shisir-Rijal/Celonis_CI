@@ -77,3 +77,6 @@ class SupabaseError(AppError):
 
 class RepositoryError(SupabaseError):
     """Raised when a repository-level database operation fails."""
+
+class AssessmentError(AppError):
+    """Raised when the Assessment node cannot parse or validate the LLM response."""

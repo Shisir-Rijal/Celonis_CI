@@ -69,6 +69,10 @@ class WorkflowState(TypedDict):
     validation_results: list[str]
 
     # ── Synthesis output ─────────────────────────────────────────
-    sources: list[Source]
-    derivation: str
-    final_output: str
+    sources: list[Source]   # deduplicated sources for the answer
+    derivation: str         # how the final answer was derived
+    final_output: str       # the answer returned to the user
+
+    # Assessment output (added in Issue #61)
+    retrieval_mode: str          # "standard" | "agentic"
+    discovery_query: str | None  # set only when retrieval_mode == "agentic"
