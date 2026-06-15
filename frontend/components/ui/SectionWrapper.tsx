@@ -9,8 +9,8 @@ type SectionWrapperProps = {
 };
 
 const variantStyles = {
-  white: "bg-primary-white text-primary-black",
-  grey: "bg-neutral-grey-00 text-primary-black p-16",
+  white: "bg-neutral-grey-30 text-primary-white",
+  grey: "bg-white/5 text-primary-white p-16",
 };
 
 const sizeStyles = {

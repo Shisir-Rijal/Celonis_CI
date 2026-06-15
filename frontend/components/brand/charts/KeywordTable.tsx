@@ -119,7 +119,7 @@ function FilterBar({
       </span>
 
       <select
-        className="text-xs border border-black/10 rounded-md px-2 py-1.5 bg-white text-primary-black focus:outline-none focus:ring-1 focus:ring-secondary-green/50"
+        className="text-xs border border-white/10 rounded-md px-2 py-1.5 bg-neutral-grey-30 text-primary-white focus:outline-none focus:ring-1 focus:ring-secondary-green/50"
         value={filters.tier}
         onChange={(e) => onChange({ ...filters, tier: e.target.value })}
       >
@@ -130,7 +130,7 @@ function FilterBar({
       </select>
 
       <select
-        className="text-xs border border-black/10 rounded-md px-2 py-1.5 bg-white text-primary-black focus:outline-none focus:ring-1 focus:ring-secondary-green/50"
+        className="text-xs border border-white/10 rounded-md px-2 py-1.5 bg-neutral-grey-30 text-primary-white focus:outline-none focus:ring-1 focus:ring-secondary-green/50"
         value={filters.mentioned}
         onChange={(e) => onChange({ ...filters, mentioned: e.target.value })}
       >
@@ -140,7 +140,7 @@ function FilterBar({
       </select>
 
       <select
-        className="text-xs border border-black/10 rounded-md px-2 py-1.5 bg-white text-primary-black focus:outline-none focus:ring-1 focus:ring-secondary-green/50"
+        className="text-xs border border-white/10 rounded-md px-2 py-1.5 bg-neutral-grey-30 text-primary-white focus:outline-none focus:ring-1 focus:ring-secondary-green/50"
         value={filters.strength}
         onChange={(e) => onChange({ ...filters, strength: e.target.value })}
       >
@@ -154,7 +154,7 @@ function FilterBar({
       {(filters.tier || filters.mentioned || filters.strength) && (
         <button
           type="button"
-          className="text-xs text-neutral-grey-20 hover:text-primary-black transition-colors"
+          className="text-xs text-neutral-grey-20 hover:text-primary-white transition-colors"
           onClick={() => onChange({ tier: "", mentioned: "", strength: "" })}
         >
           Clear ×
@@ -177,8 +177,8 @@ function KeywordTableRow({ row }: { row: KeywordRow }) {
       <tr
         className={twMerge(
           clsx(
-            "border-b border-black/4 text-sm",
-            hasQuote ? "cursor-pointer hover:bg-neutral-grey-00/60" : ""
+            "border-b border-white/8 text-sm",
+            hasQuote ? "cursor-pointer hover:bg-white/5" : ""
           )
         )}
         onClick={() => hasQuote && setOpen((o) => !o)}
@@ -186,7 +186,7 @@ function KeywordTableRow({ row }: { row: KeywordRow }) {
       >
         {/* Keyword */}
         <td className="py-2.5 pr-4">
-          <span className="font-medium text-primary-black">{row.keyword}</span>
+          <span className="font-medium text-primary-white">{row.keyword}</span>
           {hasQuote && (
             <span className="ml-1.5 text-[10px] text-neutral-grey-10">
               {open ? "▲" : "▼"}
@@ -226,10 +226,10 @@ function KeywordTableRow({ row }: { row: KeywordRow }) {
 
       {/* Expandable quote row */}
       {open && row.exact_quote && (
-        <tr className="bg-neutral-grey-00/40">
+        <tr className="bg-white/5">
           <td colSpan={6} className="py-3 px-4">
             <p
-              className="text-xs text-neutral-grey-30 leading-relaxed italic border-l-2 border-neutral-grey-10 pl-3"
+              className="text-xs text-neutral-grey-10 leading-relaxed italic border-l-2 border-neutral-grey-20 pl-3"
               style={FONT}
             >
               {row.exact_quote}
@@ -282,7 +282,7 @@ export default function KeywordTable({ rows }: KeywordTableProps) {
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="border-b border-black/8">
+            <tr className="border-b border-white/8">
               {["Keyword", "Tier", "Mentioned", "Strength", "Framing", "Criticism"].map(
                 (h) => (
                   <th

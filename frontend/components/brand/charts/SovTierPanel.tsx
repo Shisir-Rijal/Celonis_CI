@@ -21,7 +21,7 @@ function SovRow({
   const pct = (entry.mention_rate * 100).toFixed(1);
 
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-black/4 last:border-0">
+    <div className="flex items-center gap-3 py-2.5 border-b border-white/8 last:border-0">
       {/* Rank */}
       <span
         className="text-[11px] w-4 shrink-0 text-right tabular-nums"
@@ -39,7 +39,7 @@ function SovRow({
                 "text-sm truncate font-medium",
                 entry.is_target
                   ? "text-secondary-green"
-                  : "text-primary-black"
+                  : "text-primary-white"
               )
             )}
           >
@@ -54,7 +54,7 @@ function SovRow({
         </div>
 
         {/* Progress bar */}
-        <div className="h-[3px] w-full rounded-full bg-neutral-grey-00 overflow-hidden">
+        <div className="h-[3px] w-full rounded-full bg-white/10 overflow-hidden">
           <div
             className={twMerge(
               clsx(
@@ -69,7 +69,7 @@ function SovRow({
 
       {/* Count badge */}
       <span
-        className="text-[11px] w-6 shrink-0 text-center rounded-full bg-neutral-grey-00 py-0.5 tabular-nums text-neutral-grey-20"
+        className="text-[11px] w-6 shrink-0 text-center rounded-full bg-white/10 py-0.5 tabular-nums text-neutral-grey-10"
         style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
         title={`${entry.mention_count} mention${entry.mention_count !== 1 ? "s" : ""}`}
       >
@@ -102,7 +102,7 @@ export default function SovTierPanel({ tier }: SovTierPanelProps) {
   return (
     <div>
       {/* Column header */}
-      <div className="flex items-center gap-3 mb-1 pb-2 border-b border-black/8">
+      <div className="flex items-center gap-3 mb-1 pb-2 border-b border-white/8">
         <span className="w-4 shrink-0" />
         <div className="flex-1 flex items-center justify-between">
           <span

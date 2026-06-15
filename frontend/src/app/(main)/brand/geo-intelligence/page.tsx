@@ -6,7 +6,6 @@ import DashboardCard from "@components/brand/DashboardCard";
 import KpiTile from "@components/brand/KpiTile";
 import SectionHeader from "@components/brand/SectionHeader";
 import PageToolbar from "@components/brand/PageToolbar";
-import ChartPlaceholder from "@components/brand/ChartPlaceholder";
 import AlertCard from "@components/brand/AlertCard";
 import GeoTrendChart from "@components/brand/charts/GeoTrendChart";
 import LlmComparisonChart from "@components/brand/charts/LlmComparisonChart";
@@ -163,17 +162,17 @@ export default function GeoIntelligencePage() {
       {/* ============================================================== */}
       {/* Page header                                                    */}
       {/* ============================================================== */}
-      <header className="flex items-end justify-between gap-6 pb-6 border-b border-black/5">
+      <header className="flex items-end justify-between gap-6 pb-6 border-b border-neutral-grey-30">
         <div className="flex flex-col gap-1">
           <span className="text-[11px] tracking-[0.18em] uppercase text-neutral-grey-20 font-medium">
             GEO Intelligence
           </span>
-          <h1 className="text-3xl font-medium text-primary-black leading-none">
+          <h1 className="text-3xl font-medium text-primary-white leading-none">
             {company}
           </h1>
           <p className="mt-2 text-sm text-neutral-grey-20 max-w-xl">
             How AI assistants surface this brand across {" "}
-            <span className="text-primary-black font-medium">30 keywords</span>{" "}
+            <span className="text-primary-white font-medium">30 keywords</span>{" "}
             spanning brand, use-case and competitor-trigger queries.
           </p>
         </div>
@@ -391,7 +390,7 @@ export default function GeoIntelligencePage() {
           action={
             <button
               type="button"
-              className="text-xs tracking-[0.16em] uppercase font-medium text-primary-black hover:text-secondary-green transition-colors cursor-pointer"
+              className="text-xs tracking-[0.16em] uppercase font-medium text-primary-white hover:text-secondary-green transition-colors cursor-pointer"
             >
               Export →
             </button>

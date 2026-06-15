@@ -27,7 +27,7 @@ export default function DerivationNote({
         )
       )}
     >
-      <span className="font-medium text-primary-black">{title} —</span>{" "}
+      <span className="font-medium text-primary-white">{title} —</span>{" "}
       {children}
     </div>
   );
