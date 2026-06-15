@@ -1,25 +1,13 @@
 """backend/app/prompts/assess.py
 
 Prompt template for the Assessment node.
-Capability list is hardcoded here — replaced by Capability Registry in Issue #62.
 
 Issue #61: Assessment node — LLM query decomposition into capability tasks
 """
 
 from app.orchestration.state import ConversationTurn
+from app.orchestration.capability_registry import get_capability_list
 
-# Hardcoded for now — replaced by @register_capability in Issue #62
-_CAPABILITIES = [
-    "wording_analysis",
-    "seo_geo_analysis",
-    "share_of_voice",
-    "brand_identity",
-    "events_tracking",
-    "news_monitoring",
-    "financial_analysis",
-    "sentiment_analysis",
-    "competitive_analysis",
-]
 
 _SYSTEM_TEMPLATE = """\
 You are the Assessment agent for a brand intelligence system.
@@ -58,8 +46,13 @@ When retrieval_mode is "standard": discovery_query must be null.\
 
 
 def build_system_message() -> dict:
-    """Return the system message with the hardcoded capability list."""
-    capabilities = "\n".join(f"- {c}" for c in _CAPABILITIES)
+    """Return the system message with capabilities from the registry."""
+    cap_list = get_capability_list()
+    capabilities = (
+        "\n".join(f"- {c['name']}: {c['description']}" for c in cap_list)
+        if cap_list
+        else "(no capabilities registered)"
+    )
     return {
         "role": "system",
         "content": _SYSTEM_TEMPLATE.format(capabilities=capabilities),
