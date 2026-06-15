@@ -511,6 +511,7 @@ class TestConversationMemory:
         finally:
             supabase_client.table("conversations").delete().eq(
                 "session_id", str(session_id)
+<<<<<<< HEAD
             ).execute()
 
     def test_append_turn_invalid_conversation_id_raises(self, supabase_client) -> None:
@@ -535,3 +536,6 @@ class TestConversationMemory:
                 client=supabase_client,
             )
  
+=======
+            ).execute()
+>>>>>>> 55ee160 (infra: conversation memory repository and smoke test (#58))
