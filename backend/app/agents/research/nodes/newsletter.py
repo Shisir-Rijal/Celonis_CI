@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 import asyncio
 import base64
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from urllib.parse import urlparse
 
 from google.auth.transport.requests import Request
@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 
 from app.agents.research.state import ResearchState, NewsletterData
+from app.agents.research.repositories.research_repository import insert_research_snapshot
 from app.config import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -210,14 +211,19 @@ async def run(state: ResearchState) -> dict:
         subscriptions[domain]["last_checked"] = today
         _save_subscriptions(subscriptions)
 
+        newsletter_data = NewsletterData(
+            company=company,
+            url=f"https://{domain}",
+            title=f"Newsletter: {company}",
+            source_type="gmail",
+            newsletter={"subscribed": sub_info.get("subscribed", False), "items": newsletters},
+        )
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "newsletter", newsletter_data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="newsletter", error=str(db_err))
         return {
-            "newsletter": NewsletterData(
-                company=company,
-                url=f"https://{domain}",
-                title=f"Newsletter: {company}",
-                source_type="gmail",
-                newsletter={"subscribed": sub_info.get("subscribed", False), "items": newsletters},
-            ),
+            "newsletter": newsletter_data,
             "completed_nodes": ["newsletter"],
         }
     except Exception as e:

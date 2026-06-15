@@ -5,10 +5,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 import asyncio
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 from openai import AsyncOpenAI
 from app.agents.research.state import ResearchState, VisualsData
+from app.agents.research.repositories.research_repository import insert_research_snapshot
 import structlog
 from app.config import get_settings
 from app.agents.shared.utils.brandfetch import _get_brand_data
@@ -244,17 +245,22 @@ async def run(state: ResearchState) -> dict:
         videos = _extract_videos(pages)
 
 
+        visuals_data = VisualsData(
+            company=company,
+            url=f"https://{domain}",
+            title=f"Visuals: {company}",
+            logo=logos,
+            colors=colors,
+            fonts=fonts,
+            images=images if images else None,
+            videos=videos,
+        )
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "visuals", visuals_data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="visuals", error=str(db_err))
         return {
-            "visuals": VisualsData(
-                company=company,
-                url=f"https://{domain}",
-                title=f"Visuals: {company}",
-                logo=logos,
-                colors=colors,
-                fonts=fonts,
-                images=images if images else None,
-                videos=videos,
-            ),
+            "visuals": visuals_data,
             "completed_nodes": ["visuals"],
         }
     except Exception as e:

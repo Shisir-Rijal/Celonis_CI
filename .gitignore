@@ -34,6 +34,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# ===== Secrets / OAuth tokens =====
+backend/data/gmail_token.json
+
 # ===== Environment files =====
 .env
 .env.local
