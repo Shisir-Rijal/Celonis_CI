@@ -10,4 +10,5 @@ logger = structlog.get_logger(__name__)
 
 async def run(_state: ResearchState) -> dict:
     # TODO: implement wording node (brand language, taglines, Finnhub company profile)
-    raise NotImplementedError("wording node is not implemented yet")
+    logger.warning("node_skipped", node="wording", reason="not implemented yet")
+    return {"errors": ["wording: not implemented yet"]}
