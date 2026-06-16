@@ -30,11 +30,13 @@ insert into competitors (domain, name) values
     ('anthropic.com',   'Anthropic'),
     ('openai.com',      'OpenAI'),
     ('databricks.com',  'Databricks'),
-    ('uipath.com',      'UiPath'),
-    ('ibm.com',         'IBM'),
     ('signavio.com',    'SAP Signavio'),
-    ('appian.com',      'Appian'),
     ('palantir.com',    'Palantir'),
     ('servicenow.com',  'ServiceNow'),
-    ('aris.com',        'ARIS')
+    ('aris.com',        'ARIS'),
+    ('ibm.com',         'IBM'),
+    ('uipath.com',      'UiPath'),
+    ('appian.com',      'Appian'),
+    ('apromore.com',    'Apromore from Salesforce'),
+    ('microsoft.com/en-us/microsoft-fabric', 'Microsoft Fabric')
 on conflict (domain) do nothing;
