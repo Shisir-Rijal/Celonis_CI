@@ -7,7 +7,7 @@ from langgraph.graph import START, END, StateGraph
 from app.agents.research.state import ResearchState
 from app.agents.research.nodes import (
     news, financials, visuals, positioning,
-    socials, seogeo, events, newsletter, youtube, wording,
+    socials, seogeo, events, newsletter, youtube
 )
 
 
@@ -41,7 +41,6 @@ semiannual_graph = _build({
     "visuals":     visuals.run,
     "positioning": positioning.run,
     "socials":     socials.run,
-    "wording":     wording.run,   # stub — replace once wording.py is implemented
 })
 
 
