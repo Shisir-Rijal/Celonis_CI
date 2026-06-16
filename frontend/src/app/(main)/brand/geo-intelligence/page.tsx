@@ -176,7 +176,7 @@ export default function GeoIntelligencePage() {
             spanning brand, use-case and competitor-trigger queries.
           </p>
         </div>
-        <PageToolbar updatedAt={updatedAt} agentsRunning={1} />
+        <PageToolbar runtime="every month" updatedAt={updatedAt} agentsRunning={1} />
       </header>
 
       {/* ============================================================== */}

@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 type PageToolbarProps = {
+  runtime?: string;
   updatedAt?: string;
   agentsRunning?: number;
   className?: string;
@@ -13,6 +14,7 @@ type PageToolbarProps = {
  * intentional — it signals liveness without distracting from the numbers.
  */
 export default function PageToolbar({
+  runtime,
   updatedAt,
   agentsRunning,
   className,
@@ -23,6 +25,13 @@ export default function PageToolbar({
         clsx("flex items-center gap-6 text-sm", className)
       )}
     >
+      {runtime ? (
+        <div className="flex items-center gap-1.5 text-neutral-grey-20">
+          <span className="text-xs">Runs</span>
+          <span className="text-primary-white font-medium">{runtime}</span>
+        </div>
+      ) : null}
+
       {updatedAt ? (
         <div className="flex items-center gap-1.5 text-neutral-grey-20">
           <span className="text-xs">Updated</span>

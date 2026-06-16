@@ -1,5 +1,6 @@
+import re
 from typing import TypedDict, Annotated, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, timezone
 import operator
 from app.models.schemas import ChunkMetadata
@@ -58,6 +59,21 @@ class EventItem(BaseData):
     attendees: int | None = None
     location: str | None = None
     event_topic: str | None = None     # human-readable topic string (≠ BaseData.topic = RAG tags)
+
+    @field_validator("attendees", mode="before")
+    @classmethod
+    def coerce_attendees(cls, v: object) -> int | None:
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float):
+            return int(v)
+        if isinstance(v, str):
+            m = re.match(r"[\d,]+", v.strip())
+            if m:
+                return int(m.group().replace(",", ""))
+        return None
     organized_by: str | None = None
     sponsors: list[str] | None = None
     speakers: list[str] | None = None
