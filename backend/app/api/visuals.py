@@ -81,14 +81,20 @@ async def get_competitor_colors(
     result: dict[str, str] = {}
 
     for row in rows:
-        company: str = row.get("company") or ""
-        if not company or company in seen:
+        domain: str = row.get("company") or ""
+        if not domain or domain in seen:
             continue
-        seen.add(company)
+        seen.add(domain)
 
-        colors_data: dict = (row.get("data") or {}).get("colors") or {}
+        data_blob: dict = row.get("data") or {}
+        # Use the human-readable name stored inside the snapshot (e.g. "Celonis"),
+        # which matches event.company in the frontend. Fall back to capitalising the
+        # domain prefix so the key is always consistent with events.py.
+        company_name: str = data_blob.get("company") or domain.split(".")[0].capitalize()
+
+        colors_data: dict = data_blob.get("colors") or {}
         color = _pick_color(colors_data)
         if color:
-            result[company] = color
+            result[company_name] = color
 
     return result

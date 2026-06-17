@@ -124,6 +124,11 @@ function MonthView({
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const today = toISODate(new Date());
 
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const monthTotal = Object.entries(eventsByDate)
+    .filter(([d]) => d.startsWith(monthPrefix))
+    .reduce((sum, [, evts]) => sum + evts.length, 0);
+
   const cells: (number | null)[] = [
     ...Array(firstWeekday(year, month)).fill(null),
     ...Array.from({ length: daysInMonth(year, month) }, (_, i) => i + 1),
@@ -134,6 +139,15 @@ function MonthView({
 
   return (
     <div>
+      {/* Month total */}
+      {monthTotal > 0 && (
+        <div className="flex justify-end mb-2">
+          <span className="text-[11px] text-neutral-grey-20">
+            <span className="font-medium text-primary-white">{monthTotal}</span> events this month
+          </span>
+        </div>
+      )}
+
       {/* Weekday headers */}
       <div className="grid grid-cols-7 border-b border-white/8 mb-0">
         {WEEKDAYS.map((d) => (
@@ -186,16 +200,16 @@ function MonthView({
               {/* Event dots */}
               {dayEvents.length > 0 && (
                 <div className="flex flex-wrap gap-1 items-center">
-                  {dayEvents.slice(0, 3).map((e, j) => (
+                  {dayEvents.slice(0, 6).map((e, j) => (
                     <span
                       key={j}
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: getCompetitorColor(e.company, allCompanies, brandColors) }}
                     />
                   ))}
-                  {dayEvents.length > 3 && (
+                  {dayEvents.length > 6 && (
                     <span className="text-[9px] text-neutral-grey-20 leading-none">
-                      +{dayEvents.length - 3}
+                      +{dayEvents.length - 6}
                     </span>
                   )}
                 </div>
@@ -293,10 +307,15 @@ function MiniMonth({
                 {day}
               </span>
               {events.length > 0 && (
-                <span
-                  className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
-                  style={{ backgroundColor: getCompetitorColor(events[0].company, allCompanies, brandColors) }}
-                />
+                <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-[2px]">
+                  {events.slice(0, 3).map((e, j) => (
+                    <span
+                      key={j}
+                      className="w-[3px] h-[3px] rounded-full shrink-0"
+                      style={{ backgroundColor: getCompetitorColor(e.company, allCompanies, brandColors) }}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           );

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from openai import AsyncOpenAI
 
 from app.agents.research.state import ResearchState, SeoGeoData, SeoKeywordSighting, GeoKeywordSighting
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.config import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -223,6 +223,9 @@ async def _geo_keyword_search(company: str, domain: str) -> list[GeoKeywordSight
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "seogeo"):
+        logger.info("node_skipped_cached", node="seogeo", domain=domain)
+        return {"completed_nodes": ["seogeo"]}
     company = domain.split(".")[0].capitalize()
     logger.info("run_seogeo", domain=domain)
 

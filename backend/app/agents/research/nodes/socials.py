@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 import structlog
 from datetime import datetime, timezone
 from app.agents.research.state import ResearchState, SocialData
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.agents.shared.utils.brandfetch import _get_brand_data
 
 logger = structlog.get_logger(__name__)
@@ -38,6 +38,9 @@ async def _scrape_social_links(domain: str) -> dict[str, str]:
 async def run(state: ResearchState) -> dict:
     logger.info("run_socials")
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "socials"):
+        logger.info("node_skipped_cached", node="socials", domain=domain)
+        return {"completed_nodes": ["socials"]}
     company = domain.split(".")[0].capitalize()
 
     try:

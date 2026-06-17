@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from app.agents.research.state import ResearchState, YoutubeData, YoutubeChannelData, YtSearchData
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.agents.shared.utils.youtube import _scrape_yt_content_by_search_for, VideoData
 from app.config import get_settings
 
@@ -108,6 +108,9 @@ async def _scrape_channel(youtube_url: str, company: str) -> YoutubeChannelData 
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "youtube"):
+        logger.info("node_skipped_cached", node="youtube", domain=domain)
+        return {"completed_nodes": ["youtube"]}
     company = domain.split(".")[0].capitalize()
     logger.info("run_youtube", domain=domain)
 
