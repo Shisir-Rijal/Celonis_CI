@@ -271,9 +271,9 @@ export default function EventsMapCore({ events, allCompanies, brandColors, regio
     <MapContainer
       center={[20, 10]}
       zoom={2}
-      minZoom={1}
+      minZoom={2}
       maxZoom={14}
-      maxBounds={[[-85, -180], [85, 180]]}
+      maxBounds={[[-50, -125], [72, 145]]}
       maxBoundsViscosity={1.0}
       style={{ height: "100%", width: "100%", background: "#1D1D1D" }}
       className="rounded-b-lg"
@@ -294,12 +294,12 @@ export default function EventsMapCore({ events, allCompanies, brandColors, regio
           <CircleMarker
             key={`${event.company}-${event.event_date ?? i}-${i}`}
             center={[lat, lng]}
-            radius={7}
+            radius={4}
             pathOptions={{
               color,
               fillColor: color,
               fillOpacity: 0.85,
-              weight: 1.5,
+              weight: 1,
             }}
           >
             <Popup minWidth={200} maxWidth={280}>

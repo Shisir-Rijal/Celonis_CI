@@ -136,11 +136,13 @@ function applyFilters(
   events: EventItem[],
   competitor: string,
   period: Period,
-  region: string
+  region: string,
+  topic: string,
 ): EventItem[] {
   return events.filter((e) => {
     if (competitor && e.company !== competitor) return false;
     if (region && locationToRegion(e.location) !== region) return false;
+    if (topic && e.event_topic !== topic) return false;
     return matchesPeriod(e, period);
   });
 }
@@ -163,6 +165,7 @@ export default function EventsOverview() {
   const [competitor, setCompetitor] = useState("");
   const [period, setPeriod]         = useState<Period>("all");
   const [region, setRegion]         = useState("");
+  const [topic, setTopic]           = useState("");
   const [visibleCount, setVisibleCount] = useState(12);
 
   const allCompanies = useMemo(
@@ -177,12 +180,22 @@ export default function EventsOverview() {
     return REGION_ORDER.filter((r) => present.has(r));
   }, [data]);
 
+  const allTopics = useMemo(() => {
+    const countMap: Record<string, number> = {};
+    for (const e of data?.events ?? []) {
+      if (e.event_topic) countMap[e.event_topic] = (countMap[e.event_topic] ?? 0) + 1;
+    }
+    return Object.entries(countMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([t]) => t);
+  }, [data]);
+
   const filtered = useMemo(
-    () => applyFilters(data?.events ?? [], competitor, period, region),
-    [data, competitor, period, region]
+    () => applyFilters(data?.events ?? [], competitor, period, region, topic),
+    [data, competitor, period, region, topic]
   );
 
-  const hasFilter = Boolean(competitor || region || period !== "all");
+  const hasFilter = Boolean(competitor || region || period !== "all" || topic);
 
   useEffect(() => { setVisibleCount(12); }, [filtered]);
 
@@ -190,6 +203,7 @@ export default function EventsOverview() {
     setCompetitor("");
     setPeriod("all");
     setRegion("");
+    setTopic("");
   }
 
   return (
@@ -245,6 +259,17 @@ export default function EventsOverview() {
           <option value="">All regions</option>
           {allRegions.map((r) => (
             <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+
+        <select
+          className={SELECT_CLS}
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+        >
+          <option value="">All topics</option>
+          {allTopics.map((t) => (
+            <option key={t} value={t}>{t}</option>
           ))}
         </select>
       </div>

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from openai import AsyncOpenAI
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 from app.agents.research.state import ResearchState, PositioningData, BlogData
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.config import get_settings
 
 
@@ -172,6 +172,9 @@ async def _scrape_positioning(domain: str) -> PositioningData:
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "positioning"):
+        logger.info("node_skipped_cached", node="positioning", domain=domain)
+        return {"completed_nodes": ["positioning"]}
     try:
         data = await _scrape_positioning(domain)
         try:

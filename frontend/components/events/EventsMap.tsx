@@ -13,7 +13,7 @@ import DashboardCard from "@components/brand/DashboardCard";
 // SSR-free Leaflet map
 const EventsMapCore = dynamic(() => import("./EventsMapCore"), {
   ssr: false,
-  loading: () => <ZoneSkeleton height={520} />,
+  loading: () => <ZoneSkeleton />,
 });
 
 // ---------------------------------------------------------------------------
@@ -120,12 +120,6 @@ const SIZE_OPTIONS = [
 ] as const;
 type EventSize = typeof SIZE_OPTIONS[number]["value"];
 
-const MODE_OPTIONS = [
-  { value: "all",       label: "Online & in-person" },
-  { value: "online",    label: "Online only"         },
-  { value: "in-person", label: "In-person only"      },
-] as const;
-type EventMode = typeof MODE_OPTIONS[number]["value"];
 
 function matchesPeriod(e: EventItem, period: MapPeriod): boolean {
   if (period === "all") return true;
@@ -149,11 +143,6 @@ function matchesSize(e: EventItem, size: EventSize): boolean {
   return n >= 1000;
 }
 
-function matchesMode(e: EventItem, mode: EventMode): boolean {
-  if (mode === "all") return true;
-  const isOnline = locationToRegion(e.location) === "Online / Virtual";
-  return mode === "online" ? isOnline : !isOnline;
-}
 
 // ---------------------------------------------------------------------------
 // Sidebar stats
@@ -224,7 +213,6 @@ export function EventsMap() {
   const [region, setRegion]         = useState("");
   const [period, setPeriod]         = useState<MapPeriod>("month");
   const [size, setSize]             = useState<EventSize>("all");
-  const [mode, setMode]             = useState<EventMode>("all");
 
   const allCompanies = useMemo(
     () => [...new Set((data?.events ?? []).map((e) => e.company))].sort(),
@@ -244,25 +232,23 @@ export function EventsMap() {
       if (region && locationToRegion(e.location) !== region) return false;
       if (!matchesPeriod(e, period)) return false;
       if (!matchesSize(e, size)) return false;
-      if (!matchesMode(e, mode)) return false;
       return true;
     });
-  }, [data, competitor, region, period, size, mode]);
+  }, [data, competitor, region, period, size]);
 
   const stats = useMemo(() => computeStats(filtered), [filtered]);
 
-  const hasFilter = Boolean(competitor || region || period !== "month" || size !== "all" || mode !== "all");
+  const hasFilter = Boolean(competitor || region || period !== "month" || size !== "all");
 
   function clearFilters() {
     setCompetitor("");
     setRegion("");
     setPeriod("month");
     setSize("all");
-    setMode("all");
   }
 
   const mapContent = isLoading ? (
-    <ZoneSkeleton height={520} />
+    <ZoneSkeleton />
   ) : isError ? (
     <ZoneError message={(error as Error)?.message} />
   ) : !filtered.length ? (
@@ -286,10 +272,6 @@ export function EventsMap() {
 
         <select className={SELECT_CLS} value={period} onChange={(e) => setPeriod(e.target.value as MapPeriod)}>
           {MAP_PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-
-        <select className={SELECT_CLS} value={mode} onChange={(e) => setMode(e.target.value as EventMode)}>
-          {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
         <select className={SELECT_CLS} value={size} onChange={(e) => setSize(e.target.value as EventSize)}>
@@ -321,17 +303,40 @@ export function EventsMap() {
         </span>
       </div>
 
+      {/* Legend */}
+      {!isLoading && !isError && allCompanies.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4">
+          {allCompanies.map((company, i) => (
+            <button
+              key={company}
+              type="button"
+              onClick={() => setCompetitor(competitor === company ? "" : company)}
+              className={[
+                "flex items-center gap-1.5 text-xs transition-opacity cursor-pointer",
+                competitor && competitor !== company ? "opacity-30" : "opacity-100",
+              ].join(" ")}
+            >
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: getCompetitorColor(company, allCompanies, brandColors) }}
+              />
+              <span className="text-neutral-grey-10">{company}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Map + sidebar */}
-      <div className="flex gap-4 items-stretch">
+      <div className="grid grid-cols-[3fr_2fr] gap-4 items-stretch">
         {/* Map */}
-        <div className="flex-1 rounded-lg overflow-hidden border border-white/8" style={{ height: 520 }}>
+        <div className="rounded-lg overflow-hidden border border-white/8 min-h-[180px]">
           {mapContent}
         </div>
 
         {/* Sidebar stats */}
-        <div className="flex flex-col gap-3 w-52 shrink-0">
+        <div className="flex flex-col gap-3">
           {/* Event Leader */}
-          <DashboardCard label="Event Leader" sublabel="Most active competitor" className="flex-1 p-4">
+          <DashboardCard label="Event Leader" sublabel="Most active competitor" className="p-4">
             {isLoading ? (
               <div className="h-10 bg-white/8 rounded animate-pulse" />
             ) : stats.leader ? (
@@ -355,7 +360,7 @@ export function EventsMap() {
           </DashboardCard>
 
           {/* Peak Month */}
-          <DashboardCard label="Peak Month" sublabel="Highest event activity" className="flex-1 p-4">
+          <DashboardCard label="Peak Month" sublabel="Highest event activity" className="p-4">
             {isLoading ? (
               <div className="h-10 bg-white/8 rounded animate-pulse" />
             ) : stats.peakMonth ? (
@@ -373,7 +378,7 @@ export function EventsMap() {
           </DashboardCard>
 
           {/* Top Location */}
-          <DashboardCard label="Top Location" sublabel="Most in-person events" className="flex-1 p-4">
+          <DashboardCard label="Top Location" sublabel="Most in-person events" className="p-4">
             {isLoading ? (
               <div className="h-10 bg-white/8 rounded animate-pulse" />
             ) : stats.topLocation ? (
@@ -392,28 +397,6 @@ export function EventsMap() {
         </div>
       </div>
 
-      {/* Legend */}
-      {!isLoading && !isError && allCompanies.length > 0 && (
-        <div className="flex flex-wrap items-center gap-4">
-          {allCompanies.map((company, i) => (
-            <button
-              key={company}
-              type="button"
-              onClick={() => setCompetitor(competitor === company ? "" : company)}
-              className={[
-                "flex items-center gap-1.5 text-xs transition-opacity cursor-pointer",
-                competitor && competitor !== company ? "opacity-30" : "opacity-100",
-              ].join(" ")}
-            >
-              <span
-                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: getCompetitorColor(company, allCompanies, brandColors) }}
-              />
-              <span className="text-neutral-grey-10">{company}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

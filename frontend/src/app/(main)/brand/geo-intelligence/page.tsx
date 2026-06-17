@@ -158,7 +158,7 @@ export default function GeoIntelligencePage() {
   );
 
   return (
-    <div className="w-full flex flex-col gap-14">
+    <div className="w-full flex flex-col gap-24">
       {/* ============================================================== */}
       {/* Page header                                                    */}
       {/* ============================================================== */}

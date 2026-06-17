@@ -78,6 +78,12 @@ async def run_tier(tier: str, domains: list[str]) -> None:
 async def main() -> None:
     args = sys.argv[1:]
 
+    # parse optional --force flag (bypass snapshot cache)
+    if "--force" in args:
+        import os
+        os.environ["RESEARCH_FORCE"] = "1"
+        args = [a for a in args if a != "--force"]
+
     # parse optional --domain flag
     domain_override = None
     if "--domain" in args:

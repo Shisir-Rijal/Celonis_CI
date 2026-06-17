@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from datetime import datetime, timezone
 from app.agents.research.state import ResearchState, FinancialData
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.agents.shared.utils.finnhub import _get_symbol
 from app.config import get_settings
 import finnhub
@@ -119,6 +119,9 @@ async def _scrape_financials(domain: str, company: str) -> FinancialData:
 async def run(state: ResearchState) -> dict:
     logger.info("Run Financials")
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "financials"):
+        logger.info("node_skipped_cached", node="financials", domain=domain)
+        return {"completed_nodes": ["financials"]}
     company = domain.split(".")[0].capitalize()
     try:
         data = await _scrape_financials(domain, company)

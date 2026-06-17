@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 from openai import AsyncOpenAI
 from app.agents.research.state import ResearchState, VisualsData
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 import structlog
 from app.config import get_settings
 from app.agents.shared.utils.brandfetch import _get_brand_data
@@ -230,6 +230,9 @@ def _extract_videos(pages: list[tuple[str, str, str]]) -> list[str]:
 async def run(state: ResearchState) -> dict:
     logger.info("Run Visuals")
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "visuals"):
+        logger.info("node_skipped_cached", node="visuals", domain=domain)
+        return {"completed_nodes": ["visuals"]}
     company = domain.split(".")[0].capitalize()
 
     try:

@@ -3,13 +3,15 @@
 import { useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell, Legend,
+  Tooltip, ResponsiveContainer, Cell, Legend, LabelList,
 } from "recharts";
 
 import { useEvents } from "@/lib/events/hooks";
 import { computeAnalysis } from "@/lib/events/analysis";
 import DashboardCard from "@components/brand/DashboardCard";
 import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/brand/ZoneState";
+import { useCompetitorColors } from "@/lib/competitors/hooks";
+import { getCompetitorColor } from "@/lib/competitors/colors";
 
 // ---------------------------------------------------------------------------
 // Colours
@@ -20,6 +22,7 @@ const BAR_OTHER    = "rgba(255,255,255,0.14)";
 const ONLINE_COLOR = "#3233F5";
 const INPERSON_COLOR = "#f59e0b";
 const GRID_COLOR   = "rgba(255,255,255,0.08)";
+const LABEL_COLOR  = "#CBCBCB";
 
 const CHART_FONT: React.CSSProperties = {
   fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
@@ -69,6 +72,8 @@ export default function EventsCharts() {
     [data, allCompanies]
   );
 
+  const { data: brandColors = {} } = useCompetitorColors();
+
   const barHeight = Math.max(240, (analysis?.perCompany.length ?? 6) * 38);
 
   if (isLoading) {
@@ -84,62 +89,150 @@ export default function EventsCharts() {
   if (!analysis) return <ZoneEmpty message="No event data available." />;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {/* Events per Competitor */}
-      <DashboardCard
-        label="Events per competitor"
-        sublabel="Total scraped events · Celonis highlighted in green"
-      >
-        <div style={CHART_FONT}>
-          <ResponsiveContainer width="100%" height={barHeight}>
-            <BarChart
-              layout="vertical"
-              data={analysis.perCompany}
-              margin={{ top: 4, right: 36, bottom: 0, left: 0 }}
-              barCategoryGap="32%"
-            >
-              <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="4 4" />
-              <XAxis type="number" tick={AXIS_NUM} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="company" tick={AXIS_CAT} axisLine={false} tickLine={false} width={96} />
-              <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-              <Bar dataKey="count" name="Events" radius={[0, 4, 4, 0]}>
-                {analysis.perCompany.map((entry, i) => (
-                  <Cell key={i} fill={entry.isCelonis ? CELONIS_GREEN : BAR_OTHER} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </DashboardCard>
+    <div className="flex flex-col gap-4">
+      {/* Row 1: Format Mix + Region Mix */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Format Mix */}
+        <DashboardCard
+          label="Format mix"
+          sublabel="In-person vs. online events per competitor"
+        >
+          <div style={CHART_FONT}>
+            <ResponsiveContainer width="100%" height={barHeight}>
+              <BarChart
+                layout="vertical"
+                data={analysis.formatMix}
+                margin={{ top: 4, right: 48, bottom: 0, left: 0 }}
+                barCategoryGap="32%"
+              >
+                <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="4 4" />
+                <XAxis type="number" tick={AXIS_NUM} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="company" tick={AXIS_CAT} axisLine={false} tickLine={false} width={96} />
+                <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                <Legend
+                  wrapperStyle={{ ...CHART_FONT, fontSize: 11, color: "#767676", paddingTop: 12 }}
+                  iconType="circle"
+                  iconSize={8}
+                />
+                <Bar dataKey="inPerson" name="In-Person" stackId="fmt" fill={INPERSON_COLOR} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="online" name="Online" stackId="fmt" fill={ONLINE_COLOR} radius={[0, 4, 4, 0]}>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  <LabelList dataKey="total" content={(props: any) => {
+                    const { x, y, width, height, value } = props;
+                    if (!value) return null;
+                    return <text x={x + width + 8} y={y + height / 2} fill={LABEL_COLOR} fontSize={11} textAnchor="start" dominantBaseline="middle">{value}</text>;
+                  }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </DashboardCard>
 
-      {/* Format Mix */}
-      <DashboardCard
-        label="Format mix"
-        sublabel="In-person vs. online events per competitor"
-      >
-        <div style={CHART_FONT}>
-          <ResponsiveContainer width="100%" height={barHeight}>
-            <BarChart
-              layout="vertical"
-              data={analysis.formatMix}
-              margin={{ top: 4, right: 36, bottom: 0, left: 0 }}
-              barCategoryGap="32%"
-            >
-              <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="4 4" />
-              <XAxis type="number" tick={AXIS_NUM} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="company" tick={AXIS_CAT} axisLine={false} tickLine={false} width={96} />
-              <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-              <Legend
-                wrapperStyle={{ ...CHART_FONT, fontSize: 11, color: "#767676", paddingTop: 12 }}
-                iconType="circle"
-                iconSize={8}
-              />
-              <Bar dataKey="inPerson" name="In-Person" stackId="fmt" fill={INPERSON_COLOR} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="online"   name="Online"    stackId="fmt" fill={ONLINE_COLOR}   radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </DashboardCard>
+        {/* Region Mix */}
+        <DashboardCard
+          label="Region mix"
+          sublabel="In-person vs. online events per region"
+        >
+          <div style={CHART_FONT}>
+            <ResponsiveContainer width="100%" height={Math.max(200, analysis.regionMix.length * 40)}>
+              <BarChart
+                layout="vertical"
+                data={analysis.regionMix}
+                margin={{ top: 4, right: 48, bottom: 0, left: 0 }}
+                barCategoryGap="32%"
+              >
+                <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="4 4" />
+                <XAxis type="number" tick={AXIS_NUM} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="region" tick={AXIS_CAT} axisLine={false} tickLine={false} width={130} />
+                <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                <Legend
+                  wrapperStyle={{ ...CHART_FONT, fontSize: 11, color: "#767676", paddingTop: 12 }}
+                  iconType="circle"
+                  iconSize={8}
+                />
+                <Bar dataKey="inPerson" name="In-Person" stackId="rgn" fill={INPERSON_COLOR} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="online" name="Online" stackId="rgn" fill={ONLINE_COLOR} radius={[0, 4, 4, 0]}>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  <LabelList dataKey="total" content={(props: any) => {
+                    const { x, y, width, height, value } = props;
+                    if (!value) return null;
+                    return <text x={x + width + 8} y={y + height / 2} fill={LABEL_COLOR} fontSize={11} textAnchor="start" dominantBaseline="middle">{value}</text>;
+                  }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </DashboardCard>
+      </div>
+
+      {/* Row 2: Trending Topics + Topics by Competitor */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Trending Topics */}
+        <DashboardCard label="Trending topics" sublabel="Most frequent event topics across all competitors">
+          <div style={CHART_FONT}>
+            <ResponsiveContainer width="100%" height={Math.max(200, analysis.trendingTopics.length * 36)}>
+              <BarChart
+                layout="vertical"
+                data={analysis.trendingTopics}
+                margin={{ top: 4, right: 48, bottom: 0, left: 0 }}
+                barCategoryGap="32%"
+              >
+                <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="4 4" />
+                <XAxis type="number" tick={AXIS_NUM} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="topic" tick={AXIS_CAT} axisLine={false} tickLine={false} width={150} />
+                <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                <Bar dataKey="total" name="Events" radius={[0, 4, 4, 0]}>
+                  {analysis.trendingTopics.map((_, i) => (
+                    <Cell key={i} fill={`rgba(92,254,80,${Math.max(0.25, 0.9 - i * 0.07)})`} />
+                  ))}
+                  <LabelList
+                    dataKey="total"
+                    content={(props: any) => {
+                      const { x, y, width, height, value } = props;
+                      if (!value) return null;
+                      return (
+                        <text x={x + width + 8} y={y + height / 2} fill={LABEL_COLOR} fontSize={11} textAnchor="start" dominantBaseline="middle">{value}</text>
+                      );
+                    }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </DashboardCard>
+
+        {/* Topics by Competitor */}
+        <DashboardCard label="Topic breakdown" sublabel="Which competitor focuses on which topic">
+          <div style={CHART_FONT}>
+            <ResponsiveContainer width="100%" height={Math.max(200, analysis.topicByCompany.length * 36)}>
+              <BarChart
+                layout="vertical"
+                data={analysis.topicByCompany}
+                margin={{ top: 4, right: 48, bottom: 0, left: 0 }}
+                barCategoryGap="32%"
+              >
+                <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="4 4" />
+                <XAxis type="number" tick={AXIS_NUM} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="topic" tick={AXIS_CAT} axisLine={false} tickLine={false} width={150} />
+                <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                <Legend wrapperStyle={{ ...CHART_FONT, fontSize: 11, color: "#767676", paddingTop: 12 }} iconType="circle" iconSize={8} />
+                {allCompanies.map((company, i) => (
+                  <Bar
+                    key={company}
+                    dataKey={company}
+                    name={company}
+                    stackId="tc"
+                    fill={getCompetitorColor(company, allCompanies, brandColors)}
+                    radius={i === allCompanies.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </DashboardCard>
+
+      </div>
     </div>
   );
 }

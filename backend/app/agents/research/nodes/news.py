@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from app.config import get_settings
 from datetime import date, datetime, timezone
 from app.agents.shared.utils.finnhub import _get_symbol
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from openai import AsyncOpenAI
 
 
@@ -200,6 +200,9 @@ async def _get_firecrawl_news(domain: str, company: str) -> list[NewsItem]:
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "news"):
+        logger.info("node_skipped_cached", node="news", domain=domain)
+        return {"completed_nodes": ["news"]}
     company = domain.split(".")[0].capitalize()
     try:
         all_news: list[NewsItem] = []

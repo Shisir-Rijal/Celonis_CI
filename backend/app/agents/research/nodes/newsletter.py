@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 
 from app.agents.research.state import ResearchState, NewsletterData
-from app.agents.research.repositories.research_repository import insert_research_snapshot
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.config import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -192,6 +192,9 @@ def _fetch_newsletters_from_gmail(domain: str, since: str | None = None) -> list
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "newsletter"):
+        logger.info("node_skipped_cached", node="newsletter", domain=domain)
+        return {"completed_nodes": ["newsletter"]}
     company = domain.split(".")[0].capitalize()
     try:
         subscriptions = _load_subscriptions()

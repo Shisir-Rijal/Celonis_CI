@@ -36,7 +36,9 @@ export function locationToRegion(location: string | null): string {
 // ---------------------------------------------------------------------------
 
 export type PerCompany = { company: string; count: number; isCelonis: boolean };
-export type FormatRow  = { company: string; inPerson: number; online: number; isCelonis: boolean };
+export type FormatRow  = { company: string; inPerson: number; online: number; total: number; isCelonis: boolean };
+export type RegionRow  = { region: string; inPerson: number; online: number; total: number };
+export type TopicRow = { topic: string; total: number };
 
 export type EventsAnalysis = {
   total: number;
@@ -45,6 +47,9 @@ export type EventsAnalysis = {
   mostActiveCompetitor: { name: string; count: number } | null;
   perCompany: PerCompany[];
   formatMix: FormatRow[];
+  regionMix: RegionRow[];
+  trendingTopics: TopicRow[];
+  topicByCompany: Array<{ topic: string } & Record<string, number>>;
   coverageGap: { region: string; competitorEvents: number } | null;
   topicGap: { topic: string; celonisCount: number; otherCount: number } | null;
   momentum: {
@@ -60,8 +65,7 @@ export type EventsAnalysis = {
 // ---------------------------------------------------------------------------
 
 export function computeAnalysis(events: EventItem[], allCompanies: string[]): EventsAnalysis {
-  const celonisName = allCompanies.find((c) => c.toLowerCase().includes("celonis")) ?? "";
-  const isCelonis = (c: string) => c === celonisName;
+  const isCelonis = (c: string) => c.toLowerCase().includes("celonis");
 
   const total = events.length;
   const celonisEvents = events.filter((e) => isCelonis(e.company));
@@ -84,12 +88,57 @@ export function computeAnalysis(events: EventItem[], allCompanies: string[]): Ev
     if (isOnlineEvent(e.location)) fmtMap[e.company].online++;
     else fmtMap[e.company].inPerson++;
   }
-  const formatMix: FormatRow[] = perCompany.map((c) => ({
-    company: c.company,
-    inPerson: fmtMap[c.company]?.inPerson ?? 0,
-    online:   fmtMap[c.company]?.online   ?? 0,
-    isCelonis: c.isCelonis,
-  }));
+  const formatMix: FormatRow[] = perCompany.map((c) => {
+    const inPerson = fmtMap[c.company]?.inPerson ?? 0;
+    const online   = fmtMap[c.company]?.online   ?? 0;
+    return { company: c.company, inPerson, online, total: inPerson + online, isCelonis: c.isCelonis };
+  });
+
+  // Region mix
+  const regionMap: Record<string, { inPerson: number; online: number }> = {};
+  for (const e of events) {
+    const region = !e.location
+      ? "Unknown"
+      : isOnlineEvent(e.location)
+      ? "Online / Virtual"
+      : locationToRegion(e.location);
+    if (!regionMap[region]) regionMap[region] = { inPerson: 0, online: 0 };
+    if (e.location && isOnlineEvent(e.location)) regionMap[region].online++;
+    else regionMap[region].inPerson++;
+  }
+  const REGION_MIX_ORDER = [
+    "Europe", "North America", "Asia Pacific", "South America",
+    "Middle East & Africa", "Online / Virtual", "Other", "Unknown",
+  ];
+  const regionMix: RegionRow[] = REGION_MIX_ORDER
+    .filter((r) => regionMap[r])
+    .map((r) => ({
+      region: r,
+      inPerson: regionMap[r].inPerson,
+      online:   regionMap[r].online,
+      total:    regionMap[r].inPerson + regionMap[r].online,
+    }));
+
+  // Topic mix
+  const topicCountMap: Record<string, number> = {};
+  const topicCompanyMap: Record<string, Record<string, number>> = {};
+  for (const e of events) {
+    if (!e.event_topic) continue;
+    topicCountMap[e.event_topic] = (topicCountMap[e.event_topic] ?? 0) + 1;
+    if (!topicCompanyMap[e.event_topic]) topicCompanyMap[e.event_topic] = {};
+    topicCompanyMap[e.event_topic][e.company] =
+      (topicCompanyMap[e.event_topic][e.company] ?? 0) + 1;
+  }
+  const trendingTopics: TopicRow[] = Object.entries(topicCountMap)
+    .map(([topic, total]) => ({ topic, total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+  const topicByCompany = trendingTopics.slice(0, 8).map(({ topic }) => ({
+    topic,
+    ...Object.fromEntries(
+      allCompanies.map((c) => [c, topicCompanyMap[topic]?.[c] ?? 0])
+    ),
+  })) as Array<{ topic: string } & Record<string, number>>;
 
   // Coverage gap
   const celonisRegions = new Set(
@@ -143,5 +192,5 @@ export function computeAnalysis(events: EventItem[], allCompanies: string[]): Ev
       ? { thisYear, lastYear, direction: pctChange > 0 ? "up" : pctChange < 0 ? "down" : "flat", pctChange }
       : null;
 
-  return { total, celonisCount, celonisShare, mostActiveCompetitor, perCompany, formatMix, coverageGap, topicGap, momentum };
+  return { total, celonisCount, celonisShare, mostActiveCompetitor, perCompany, formatMix, regionMix, trendingTopics, topicByCompany, coverageGap, topicGap, momentum };
 }

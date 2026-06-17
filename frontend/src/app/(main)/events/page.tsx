@@ -32,15 +32,15 @@ export default function EventsPage() {
   );
 
   return (
-    <div className="w-full flex flex-col gap-14">
+    <div className="w-full flex flex-col gap-24">
       {/* Page header */}
       <header className="flex items-end justify-between gap-6 pb-6 border-b border-neutral-grey-30">
         <div className="flex flex-col gap-1">
           <span className="text-[11px] tracking-[0.18em] uppercase text-neutral-grey-20 font-medium">
-            Events
+            Celonis and Competitors
           </span>
           <h1 className="text-3xl font-medium text-primary-white leading-none">
-            Celonis & Competitor events
+            Events Overview
           </h1>
           <p className="mt-2 text-sm text-neutral-grey-20 max-w-xl">
             Recently scraped events from Celonis and its tracked competitors —{" "}
@@ -56,7 +56,7 @@ export default function EventsPage() {
       {/* Zone 1 — KPIs */}
       <section>
         <SectionHeader
-          label="Events at a glance"
+          label="Event summary"
           description="High-level event presence across all tracked competitors."
         />
         <EventsKpis />
