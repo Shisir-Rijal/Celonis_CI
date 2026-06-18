@@ -9,7 +9,7 @@ Issue #60 acceptance criteria:
   - search_chunks raising: exception propagates unchanged
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -32,12 +32,12 @@ async def test_retrieve_normal_path(mock_chunks) -> None:
     are written to retrieved_context as plain text."""
     with patch(
         "app.orchestration.nodes.retrieve.search_chunks",
-        return_value=mock_chunks,
+        new=AsyncMock(return_value=mock_chunks),
     ) as mock_search:
         state = {"query": "What is Celonis?"}
         result = await retrieve_node(state)
 
-        mock_search.assert_called_once_with(query="What is Celonis?", limit=10)
+        mock_search.assert_called_once_with(query="What is Celonis?", k=10)
         assert result == {
             "retrieved_context": [
                 "Celonis is a process mining platform.",
@@ -51,7 +51,7 @@ async def test_retrieve_empty_results() -> None:
     """When search_chunks returns an empty list, retrieved_context is []."""
     with patch(
         "app.orchestration.nodes.retrieve.search_chunks",
-        return_value=[],
+        new=AsyncMock(return_value=[]),
     ):
         state = {"query": "query with no results"}
         result = await retrieve_node(state)
@@ -64,7 +64,7 @@ async def test_retrieve_search_chunks_raises() -> None:
     """When search_chunks raises, the exception propagates unchanged."""
     with patch(
         "app.orchestration.nodes.retrieve.search_chunks",
-        side_effect=RuntimeError("Supabase unreachable"),
+        new=AsyncMock(side_effect=RuntimeError("Supabase unreachable")),
     ):
         state = {"query": "What is Celonis?"}
 

@@ -10,7 +10,7 @@ export default function PageWrapper({
   children,
 }: PageWrapperProps) {
   return (
-    <div className="lg:ml-36 gap-24 flex flex-col min-h-screen">
+    <div className="lg:pt-16 flex flex-col min-h-screen bg-primary-black text-primary-white">
       <div
         className={twMerge(
           clsx("flex flex-col gap-24 px-16 py-22 justify-start items-start flex-1")

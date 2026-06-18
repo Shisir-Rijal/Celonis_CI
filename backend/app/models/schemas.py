@@ -3,6 +3,7 @@ from typing import Literal
 from datetime import datetime
 from uuid import UUID
 
+
 class ChunkMetadata(BaseModel):
     """this class defines the metadata for a chunk of content, including information about the company, source type, date, URL, title, language, topic, content type, visual type, and chunking strategy."""
     company: str
@@ -11,19 +12,51 @@ class ChunkMetadata(BaseModel):
     date: datetime
     url: str
     title: str | None
-    language: str
+    language: str | None
     topic: list[str]
     content_type: Literal["text", "image", "transcript"]
     visual_type: str | None
     chunking_strategy: Literal["structural", "none", "agentic"]
+    entities: list[str] = []
 
 class Chunk(BaseModel):
-    """this class defines a chunk of content, including its unique identifier, the content itself, its metadata, an optional embedding vector, and the date it was created."""
+    """A chunk of content in the RAG corpus.
+
+    ``relevance_score`` is set by the retrieval layer (search_chunks) after
+    RRF fusion and carries the merged ranking score. It is None for chunks
+    that were not retrieved via search (e.g. freshly ingested chunks).
+    """
     id: UUID
     content: str
+    context_header: str = ""
     metadata: ChunkMetadata
     embedding: list[float] | None
     created_at: datetime | None
+    document_id: UUID | None = None
+    relevance_score: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# Retrieval filter
+# ---------------------------------------------------------------------------
+
+class ChunkFilter(BaseModel):
+    """Metadata pre-filter for hybrid chunk search.
+
+    Every field is optional. Fields left as None are ignored — no SQL
+    predicate is added for them. The Assessment node (Issue #61) populates
+    this from the parsed query; connectors and tests can pass it directly.
+
+    ``date_from`` / ``date_to`` are compared against ``ChunkMetadata.date``
+    (stored as ISO-8601 in the metadata JSONB column).
+    """
+
+    company: str | None = None
+    source_type: str | None = None
+    source_origin: Literal["owned", "earned", "third_party", "internal"] | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    topic: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------

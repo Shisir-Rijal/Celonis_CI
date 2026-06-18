@@ -5,10 +5,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 import asyncio
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from firecrawl import V1FirecrawlApp as FirecrawlApp
 from openai import AsyncOpenAI
 from app.agents.research.state import ResearchState, VisualsData
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 import structlog
 from app.config import get_settings
 from app.agents.shared.utils.brandfetch import _get_brand_data
@@ -229,12 +230,16 @@ def _extract_videos(pages: list[tuple[str, str, str]]) -> list[str]:
 async def run(state: ResearchState) -> dict:
     logger.info("Run Visuals")
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "visuals"):
+        logger.info("node_skipped_cached", node="visuals", domain=domain)
+        return {"completed_nodes": ["visuals"]}
+    company = domain.split(".")[0].capitalize()
+
     try:
         openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
 
         data = await _get_brand_data(domain)
         pages = await _get_page_contents(domain)
-
 
         logos = _extract_logos(data, pages)
         colors = await _extract_colors(data, pages, openai)
@@ -243,15 +248,22 @@ async def run(state: ResearchState) -> dict:
         videos = _extract_videos(pages)
 
 
+        visuals_data = VisualsData(
+            company=company,
+            url=f"https://{domain}",
+            title=f"Visuals: {company}",
+            logo=logos,
+            colors=colors,
+            fonts=fonts,
+            images=images if images else None,
+            videos=videos,
+        )
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "visuals", visuals_data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="visuals", error=str(db_err))
         return {
-            "visuals": VisualsData(
-                logo=logos,
-                colors=colors,
-                fonts=fonts,
-                images=images if images else None,
-                videos=videos,
-                source="brandfetch+firecrawl",
-            ),
+            "visuals": visuals_data,
             "completed_nodes": ["visuals"],
         }
     except Exception as e:

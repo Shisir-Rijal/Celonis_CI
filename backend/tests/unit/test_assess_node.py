@@ -139,3 +139,30 @@ async def test_agentic_without_discovery_query_raises(base_state, mock_client) -
     with patch("app.orchestration.nodes.assess.get_chat_client", return_value=mock_client):
         with pytest.raises(AssessmentError):
             await assess_node(base_state)
+
+@pytest.mark.asyncio
+async def test_invalid_tasks_not_a_list_raises(base_state, mock_client) -> None:
+    """tasks not a list → AssessmentError."""
+    mock_client.complete.return_value = json.dumps({
+        "tasks": "not a list",
+        "retrieval_mode": "standard",
+        "discovery_query": None,
+    })
+
+    with patch("app.orchestration.nodes.assess.get_chat_client", return_value=mock_client):
+        with pytest.raises(AssessmentError):
+            await assess_node(base_state)
+
+
+@pytest.mark.asyncio
+async def test_unknown_retrieval_mode_raises(base_state, mock_client) -> None:
+    """Unknown retrieval_mode value → AssessmentError."""
+    mock_client.complete.return_value = json.dumps({
+        "tasks": [],
+        "retrieval_mode": "AGENTIC",
+        "discovery_query": None,
+    })
+
+    with patch("app.orchestration.nodes.assess.get_chat_client", return_value=mock_client):
+        with pytest.raises(AssessmentError):
+            await assess_node(base_state)

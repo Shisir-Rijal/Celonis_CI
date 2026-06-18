@@ -86,3 +86,10 @@ class CapabilityRegistrationError(AppError):
 
 class SynthesisError(AppError):
     """Raised when the Synthesize node cannot parse the LLM response."""
+
+# ---------------------------------------------------------------------------
+# Agents
+# ---------------------------------------------------------------------------
+
+class NewsError(AppError):
+    """Raised when all news sources fail and no articles could be fetched."""

@@ -147,3 +147,12 @@ async def test_unknown_capability_sets_error_and_continues(base_state) -> None:
     assert len(result["agent_calls"]) == 1
     assert result["agent_calls"][0].error == "capability not found"
     assert result["agent_calls"][0].capability == "nonexistent_cap"
+
+def test_all_tasks_fail_routes_to_synthesize(base_state) -> None:
+    """All agent_calls have errors → should_correlate returns 'synthesize'."""
+    base_state["agent_calls"] = [
+        make_agent_call(capability="cap_a", error="failed"),
+        make_agent_call(capability="cap_b", error="also failed"),
+    ]
+
+    assert should_correlate(base_state) == "synthesize"

@@ -11,27 +11,33 @@ export default function NavBar() {
 
   return (
     <>
-      {/* Desktop sidebar — visible on lg+ */}
-      <nav className="hidden lg:flex flex-col bg-primary-black text-primary-white h-screen w-36 px-6 py-6 fixed left-0 top-0 z-20">
-        <div className="mb-8 w-full">
+      {/* Desktop topbar — visible on lg+ */}
+      <nav className="hidden lg:flex flex-row items-center bg-primary-black text-primary-white h-16 px-16 fixed top-0 left-0 right-0 z-20">
+        {/* Logo left */}
+        <div className="flex-shrink-0">
           <Image
             src="/celonis_logo.png"
             alt="Celonis Logo"
-            width={160}
-            height={160}
-            className="w-full h-auto object-contain"
+            width={120}
+            height={40}
+            className="h-8 w-auto object-contain"
           />
         </div>
 
-        <div className="flex flex-col gap-1 flex-1">
+        {/* Nav links center */}
+        <div className="flex flex-row flex-1 justify-center gap-2">
           <NavButton text="Home" href="/" />
+          <NavButton text="GEO" href="/brand/geo-intelligence" />
+          <NavButton text="Events" href="/events" />
           <NavButton text="News" href="/news" />
           <NavButton text="Chatbot" href="/chatbot" />
-        </div>
-
-        <div className="flex flex-col gap-2">
           <NavButton text="Settings" href="/settings" />
         </div>
+
+        {/* Export button right */}
+        <button className="bg-secondary-green text-primary-black px-4 py-2 text-sm font-medium rounded-sm cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0">
+          Export
+        </button>
       </nav>
 
       {/* Mobile topbar — visible on md and below */}

@@ -19,5 +19,5 @@ async def retrieve_node(state: WorkflowState) -> dict:
     Returns a dict with only the keys being updated — LangGraph merges
     it into the full state.
     """
-    results = search_chunks(query=state["query"], limit=10)
+    results = await search_chunks(query=state["query"], k=10)
     return {"retrieved_context": [chunk.content for chunk in results]}

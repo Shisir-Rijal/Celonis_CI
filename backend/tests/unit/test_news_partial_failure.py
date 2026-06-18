@@ -8,29 +8,35 @@ from unittest.mock import AsyncMock, patch
 from app.exceptions import NewsError
 from app.agents.research.state import (
     ResearchState, NewsData, NewsItem,
-    VisualsData, PositioningData, FinancialData,
-    SocialData, SeoGeoData, EventsData, NewsletterData,
+    SeoGeoData, EventsData,
 )
 
 
 def _make_state(domain: str = "celonis.com") -> ResearchState:
     return ResearchState(
         competitor_domain=domain,
-        visuals=VisualsData(),
-        positioning=PositioningData(),
-        financials=FinancialData(),
-        socials=SocialData(),
+        visuals=None,
+        positioning=None,
+        financials=None,
+        socials=None,
+        youtube=None,
         seogeo=SeoGeoData(),
         news=NewsData(),
         events=EventsData(),
-        newsletter=NewsletterData(),
+        newsletter=None,
+        wording=None,
         errors=[],
         completed_nodes=[],
     )
 
 
 def _make_news_item(heading: str) -> NewsItem:
-    return NewsItem(heading=heading, date="2024-01-15")
+    return NewsItem(
+        company="celonis",
+        url="https://celonis.com",
+        heading=heading,
+        published_date="2024-01-15",
+    )
 
 
 @pytest.mark.asyncio
@@ -39,6 +45,8 @@ async def test_finnhub_fails_serper_and_firecrawl_succeed():
     firecrawl_items = [_make_news_item("Firecrawl article")]
 
     with (
+        patch("app.agents.research.nodes.news.snapshot_exists", return_value=False),
+        patch("app.agents.research.nodes.news.insert_research_snapshot"),
         patch("app.agents.research.nodes.news._get_symbol", side_effect=Exception("finnhub down")),
         patch("app.agents.research.nodes.news._get_serper_news", new=AsyncMock(return_value=serper_items)),
         patch("app.agents.research.nodes.news._get_firecrawl_news", new=AsyncMock(return_value=firecrawl_items)),
@@ -53,6 +61,8 @@ async def test_finnhub_fails_serper_and_firecrawl_succeed():
 @pytest.mark.asyncio
 async def test_all_sources_fail_raises_news_error():
     with (
+        patch("app.agents.research.nodes.news.snapshot_exists", return_value=False),
+        patch("app.agents.research.nodes.news.insert_research_snapshot"),
         patch("app.agents.research.nodes.news._get_symbol", side_effect=Exception("finnhub down")),
         patch("app.agents.research.nodes.news._get_serper_news", new=AsyncMock(side_effect=Exception("serper down"))),
         patch("app.agents.research.nodes.news._get_firecrawl_news", new=AsyncMock(side_effect=Exception("firecrawl down"))),
@@ -69,6 +79,8 @@ async def test_all_sources_fail_raises_news_error():
 @pytest.mark.asyncio
 async def test_all_sources_return_empty_no_error():
     with (
+        patch("app.agents.research.nodes.news.snapshot_exists", return_value=False),
+        patch("app.agents.research.nodes.news.insert_research_snapshot"),
         patch("app.agents.research.nodes.news._get_symbol", return_value=None),
         patch("app.agents.research.nodes.news._get_serper_news", new=AsyncMock(return_value=[])),
         patch("app.agents.research.nodes.news._get_firecrawl_news", new=AsyncMock(return_value=[])),
@@ -83,6 +95,8 @@ async def test_all_sources_return_empty_no_error():
 @pytest.mark.asyncio
 async def test_warning_logged_per_failed_source():
     with (
+        patch("app.agents.research.nodes.news.snapshot_exists", return_value=False),
+        patch("app.agents.research.nodes.news.insert_research_snapshot"),
         patch("app.agents.research.nodes.news._get_symbol", side_effect=Exception("finnhub down")),
         patch("app.agents.research.nodes.news._get_serper_news", new=AsyncMock(side_effect=Exception("serper down"))),
         patch("app.agents.research.nodes.news._get_firecrawl_news", new=AsyncMock(return_value=[_make_news_item("article")])),

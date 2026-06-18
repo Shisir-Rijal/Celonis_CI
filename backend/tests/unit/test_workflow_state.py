@@ -134,7 +134,8 @@ def test_workflow_state_constructed_with_all_fields(
     turn = ConversationTurn(role="user", content="Hello", created_at=now)
 
     state: WorkflowState = {
-        "query_input": "Who are Celonis competitors?",
+        "query": "Who are Celonis competitors?",
+        "session_id": None,
         "agent_calls": [minimal_agent_call],
         "decomposed_tasks": [{"capability": "web_search", "params": {}}],
         "retrieved_context": ["Celonis is a process mining company..."],
@@ -145,7 +146,7 @@ def test_workflow_state_constructed_with_all_fields(
         "final_output": "SAP, IBM, and UiPath are key competitors.",
     }
 
-    assert state["query_input"] == "Who are Celonis competitors?"
+    assert state["query"] == "Who are Celonis competitors?"
     assert len(state["agent_calls"]) == 1
     assert state["agent_calls"][0].capability == "web_search"
     assert state["conversation_history"][0].role == "user"

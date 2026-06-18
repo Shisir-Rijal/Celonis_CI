@@ -29,10 +29,10 @@ export default function NavButton({
       title={text}
       className={twMerge(
         clsx(
-          "flex items-center gap-8 w-full px-2 py-2 font-sans text-sm transition-colors cursor-pointer border-b",
+          "flex items-center px-4 py-2 font-sans text-sm transition-colors cursor-pointer border-b",
           isActive
-            ? "border-transparent text-secondary-green"
-            : "border-transparent text-neutral-grey-20 hover:border-neutral-grey-20"
+            ? "border-secondary-green text-secondary-green"
+            : "border-transparent text-neutral-grey-20 hover:text-primary-white hover:border-neutral-grey-20"
         )
       )}
     >

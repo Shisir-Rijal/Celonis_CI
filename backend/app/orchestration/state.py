@@ -12,6 +12,7 @@ from __future__ import annotations
 from uuid import UUID
 from datetime import datetime
 from typing import Any, Literal, TypedDict
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -41,7 +42,6 @@ class ConversationTurn(BaseModel):
     derivation: str = ""
     created_at: datetime
 
-
 class WorkflowState(TypedDict):
     """Shared state passed between every node in the orchestrator graph.
 
@@ -56,13 +56,13 @@ class WorkflowState(TypedDict):
 
     # ── Agent bookkeeping ────────────────────────────────────────
     agent_calls: list[AgentCall]
-    decomposed_tasks: list[dict[str, Any]]  # Assessment node output
+    decomposed_tasks: list[dict[str, Any]]
 
     # ── Retrieval ────────────────────────────────────────────────
-    retrieved_context: list[str]            # text chunks from Retrieve node
+    retrieved_context: list[str]
 
     # ── Conversation memory ──────────────────────────────────────
-    conversation_history: list[ConversationTurn]  # loaded by Memory Load node
+    conversation_history: list[ConversationTurn]
 
     # ── Validation ───────────────────────────────────────────────
     validation_results: list[str]
@@ -74,4 +74,5 @@ class WorkflowState(TypedDict):
 
     # Assessment output (added in Issue #61)
     retrieval_mode: str          # "standard" | "agentic"
+    
     discovery_query: str | None  # set only when retrieval_mode == "agentic"

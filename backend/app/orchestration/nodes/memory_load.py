@@ -6,7 +6,7 @@ downstream nodes have the full conversation context available.
 
 Issue #59: orchestrator graph scaffold and Memory Load node
 """
-
+import asyncio
 from app.orchestration.memory import load_conversation_history
 from app.orchestration.state import WorkflowState
 
@@ -25,5 +25,5 @@ async def memory_load_node(state: WorkflowState) -> dict:
     if session_id is None:
         return {"conversation_history": []}
 
-    turns = load_conversation_history(session_id, limit=10)
+    turns = await asyncio.to_thread(load_conversation_history, session_id, limit=10)
     return {"conversation_history": turns}

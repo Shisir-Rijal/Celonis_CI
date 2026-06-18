@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import { poppins } from "@/lib/fonts";
+import { ReactQueryProvider } from "@/lib/queryProvider";
 import "./globals.css";
-import NavBar from "../../components/ui/Navbar";
-import PageWrapper from "../../components/ui/PageWrapper";
 
 export const metadata: Metadata = {
   title: "Celonis Competitor Dashboard",
   description: "Internal Celonis Competitor Comparison Dashboard using AI agents",
 };
 
+/**
+ * Root layout — HTML shell only, no NavBar.
+ * NavBar lives in (main)/layout.tsx so /login stays clean.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -20,10 +23,7 @@ export default function RootLayout({
       className={`${poppins.variable} h-full antialiased`}
     >
       <body className="min-h-screen">
-        <NavBar/>
-        <PageWrapper
-          children={children}
-        />
+        <ReactQueryProvider>{children}</ReactQueryProvider>
       </body>
     </html>
   );

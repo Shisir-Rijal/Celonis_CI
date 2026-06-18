@@ -49,6 +49,19 @@ async def assess_node(state: WorkflowState) -> dict:
     discovery_query = parsed.get("discovery_query")
     tasks = parsed.get("tasks", [])
 
+    # Validate: tasks must be a list of dicts
+    if not isinstance(tasks, list) or not all(isinstance(t, dict) for t in tasks):
+        raise AssessmentError(
+            f"LLM returned invalid tasks: expected list[dict], got {type(tasks).__name__!r}"
+        )
+
+    # Validate: retrieval_mode must be a known value
+    if retrieval_mode not in {"standard", "agentic"}:
+        raise AssessmentError(
+            f"LLM returned unknown retrieval_mode: {retrieval_mode!r}. "
+            "Expected 'standard' or 'agentic'."
+        )
+
     # Validate: agentic mode must have discovery_query
     if retrieval_mode == "agentic" and not discovery_query:
         raise AssessmentError(

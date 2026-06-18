@@ -182,3 +182,20 @@ async def test_empty_context_and_no_successful_calls_no_llm(
     assert result["sources"] == []
     assert result["derivation"] == ""
     mock_llm_client.complete.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_malformed_json_raises_synthesis_error(
+    base_state, mock_llm_client
+) -> None:
+    """LLM returns malformed JSON → SynthesisError raised."""
+    from app.exceptions import SynthesisError
+
+    base_state["retrieved_context"] = ["Some context."]
+    mock_llm_client.complete.return_value = "not valid json {{"
+
+    with patch(
+        "app.orchestration.nodes.synthesize.get_chat_client",
+        return_value=mock_llm_client,
+    ):
+        with pytest.raises(SynthesisError):
+            await synthesize_node(base_state)

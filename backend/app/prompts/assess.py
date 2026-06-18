@@ -1,15 +1,12 @@
 """backend/app/prompts/assess.py
 
 Prompt template for the Assessment node.
-Capability list is hardcoded here — replaced by Capability Registry in Issue #62.
 
 Issue #61: Assessment node — LLM query decomposition into capability tasks
 """
 
 from app.orchestration.state import ConversationTurn
 from app.orchestration.capability_registry import get_capability_list
-
-# Hardcoded for now — replaced by @register_capability in Issue #62
 
 
 _SYSTEM_TEMPLATE = """\

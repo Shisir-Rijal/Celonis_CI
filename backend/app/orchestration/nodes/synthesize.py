@@ -34,6 +34,7 @@ async def synthesize_node(state: WorkflowState) -> dict:
     agent_calls: list[AgentCall] = state["agent_calls"]
     retrieved_context: list[str] = state["retrieved_context"]
     query: str = state["query"]
+    conversation_history = state["conversation_history"] 
 
     successful = [c for c in agent_calls if c.error is None]
 
@@ -53,15 +54,15 @@ async def synthesize_node(state: WorkflowState) -> dict:
     # ── Build messages for the appropriate case ───────────────────────
     if not successful:
         messages = build_no_capabilities_messages(
-            query, retrieved_context
+            query, retrieved_context, conversation_history
         )
     elif len(successful) == 1:
         messages = build_single_capability_messages(
-            query, successful[0]
+            query, successful[0], conversation_history
         )
     else:
         messages = build_multi_capability_messages(
-            query, successful
+            query, successful, conversation_history
         )
 
     # ── LLM call ──────────────────────────────────────────────────────

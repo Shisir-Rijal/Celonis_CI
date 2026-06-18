@@ -25,6 +25,9 @@ from app.orchestration.state import WorkflowState
 from app.orchestration.nodes.critic import critic_node
 from app.orchestration.nodes.respond import respond_node
 
+# ── Capability modules ────────────────────────────────────────────────
+import app.agents.research.nodes.news  # noqa: F401 — registers fetch_news capability at startup
+
 
 def _route_after_assess(state: WorkflowState) -> str:
     """Route to dispatch for standard queries, agentic_retrieve for discovery."""
@@ -41,6 +44,8 @@ builder.add_node("memory_load", memory_load_node)
 builder.add_node("retrieve", retrieve_node)
 builder.add_node("assess", assess_node)
 builder.add_node("agentic_retrieve", agentic_retrieve_node)
+# TODO: add edge agentic_retrieve → dispatch (Phase 2) so the agentic path
+# completes end-to-end. Currently the graph terminates after agentic_retrieve.
 builder.add_node("dispatch", dispatch_node)
 builder.add_node("correlation", correlation_node)
 builder.add_node("synthesize", synthesize_node)
