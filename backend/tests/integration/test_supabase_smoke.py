@@ -511,31 +511,6 @@ class TestConversationMemory:
         finally:
             supabase_client.table("conversations").delete().eq(
                 "session_id", str(session_id)
-<<<<<<< HEAD
+
             ).execute()
 
-    def test_append_turn_invalid_conversation_id_raises(self, supabase_client) -> None:
-        """append_turn with a non-existent conversation_id raises RepositoryError."""
-        from uuid import uuid4
-
-        from app.exceptions import RepositoryError
-        from app.models.schemas import Source
-        from app.rag.conversation_repository import append_turn
-
-        fake_id = uuid4()  # random UUID, guaranteed not in DB
-        sources = [Source(url="https://celonis.com", title="Test", relevance_score=0.9)]
-
-        with pytest.raises(RepositoryError):
-            append_turn(
-                conversation_id=fake_id,
-                query="test",
-                answer="test",
-                sources=sources,
-                derivation="test",
-                turn_number=1,
-                client=supabase_client,
-            )
- 
-=======
-            ).execute()
->>>>>>> 55ee160 (infra: conversation memory repository and smoke test (#58))

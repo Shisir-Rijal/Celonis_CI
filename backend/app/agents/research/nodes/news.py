@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from app.agents.research.state import ResearchState, NewsData, NewsItem
+from app.agents.research.state import ResearchState, NewsData, NewsItem, SeoGeoData, EventsData
 import structlog
 import httpx
 import finnhub
@@ -203,34 +203,113 @@ async def run(state: ResearchState) -> dict:
     if snapshot_exists(domain, "news"):
         logger.info("node_skipped_cached", node="news", domain=domain)
         return {"completed_nodes": ["news"]}
-    company = domain.split(".")[0].capitalize()
-    try:
-        all_news: list[NewsItem] = []
 
-        # Finnhub
+    company = domain.split(".")[0].capitalize()
+    all_news: list[NewsItem] = []
+    source_errors: list[str] = []
+
+    # Finnhub
+    try:
         ticker = _get_symbol(domain)
         if ticker:
             all_news += _get_finnhub_news(ticker, company, domain)
-
-        # Serper
-        all_news += await _get_serper_news(domain, company)
-
-        # Firecrawl
-        all_news += await _get_firecrawl_news(domain, company)
-
-        news_data = NewsData(news=all_news)
-        try:
-            insert_research_snapshot(domain, datetime.now(timezone.utc), "news", news_data)
-        except Exception as db_err:
-            logger.warning("snapshot_write_failed", node="news", error=str(db_err))
-        return {
-            "news": news_data,
-            "completed_nodes": ["news"],
-        }
     except Exception as e:
-        logger.error("node_failed", node="news", error=str(e))
-        return {"errors": [f"news: {e}"]}
+        logger.warning("news_source_failed", source="finnhub", error=str(e))
+        source_errors.append(f"finnhub: {e}")
 
+    # Serper
+    try:
+        all_news += await _get_serper_news(domain, company)
+    except Exception as e:
+        logger.warning("news_source_failed", source="serper", error=str(e))
+        source_errors.append(f"serper: {e}")
+
+    # Firecrawl
+    try:
+        all_news += await _get_firecrawl_news(domain, company)
+    except Exception as e:
+        logger.warning("news_source_failed", source="firecrawl", error=str(e))
+        source_errors.append(f"firecrawl: {e}")
+
+    if not all_news and len(source_errors) == 3:
+        from app.exceptions import NewsError
+        logger.error("all_news_sources_failed", domain=domain, errors=source_errors)
+        raise NewsError(
+            f"All news sources failed for domain '{domain}': "
+            + " | ".join(source_errors)
+        )
+
+    news_data = NewsData(news=all_news)
+    try:
+        insert_research_snapshot(domain, datetime.now(timezone.utc), "news", news_data)
+    except Exception as db_err:
+        logger.warning("snapshot_write_failed", node="news", error=str(db_err))
+
+    return {
+        "news": news_data,
+        "completed_nodes": ["news"],
+    }
+
+# ---------------------------------------------------------------------------
+# Capability registration
+# ---------------------------------------------------------------------------
+
+from app.orchestration.capability_registry import get_capability, register_capability
+from app.agents.research.state import get_frequency, to_source
+from app.exceptions import NewsError
+
+if get_capability("fetch_news") is None:
+    @register_capability(
+        name="fetch_news",
+        description=(
+            "Fetch recent news articles about a company from Finnhub, Serper, and Firecrawl. "
+            "Use when the query asks about recent news, press releases, announcements, or media coverage."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Company domain, e.g. 'celonis.com'"}
+            },
+            "required": ["domain"],
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "articles": {"type": "array"},
+                "frequency": {"type": "object"},
+                "article_count": {"type": "integer"},
+                "sources": {"type": "array"},
+            },
+        },
+    )
+    async def fetch_news_capability(params: dict) -> dict:
+        """Capability wrapper for the news fetch pipeline."""
+        domain = params["domain"]
+        state = ResearchState(
+            competitor_domain=domain,
+            visuals=None,
+            positioning=None,
+            financials=None,
+            socials=None,
+            youtube=None,
+            seogeo=SeoGeoData(),
+            news=NewsData(),
+            events=EventsData(),
+            newsletter=None,
+            wording=None,
+            errors=[],
+            completed_nodes=[],
+        )
+
+        result = await run(state)
+        news_data: NewsData = result.get("news", NewsData())
+
+        return {
+            "articles": [item.model_dump() for item in news_data.news if isinstance(item, NewsItem)],
+            "frequency": get_frequency(news_data),
+            "article_count": len(news_data.news),
+            "sources": [to_source(item).model_dump() for item in news_data.news if isinstance(item, NewsItem) and item.url],
+        }
 
 if __name__ == "__main__":
     import asyncio
