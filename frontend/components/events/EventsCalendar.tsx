@@ -5,7 +5,7 @@ import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import DashboardCard from "@components/brand/DashboardCard";
+import DashboardCard from "@components/geo/DashboardCard";
 import { useEvents } from "@/lib/events/hooks";
 import { useCompetitorColors } from "@/lib/competitors/hooks";
 import { getCompetitorColor } from "@/lib/competitors/colors";

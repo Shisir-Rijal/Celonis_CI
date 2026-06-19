@@ -2,22 +2,22 @@
 
 import { useMemo, useState } from "react";
 
-import DashboardCard from "@components/brand/DashboardCard";
-import KpiTile from "@components/brand/KpiTile";
-import SectionHeader from "@components/brand/SectionHeader";
-import PageToolbar from "@components/brand/PageToolbar";
-import AlertCard from "@components/brand/AlertCard";
-import GeoTrendChart from "@components/brand/charts/GeoTrendChart";
-import LlmComparisonChart from "@components/brand/charts/LlmComparisonChart";
-import SovTierPanel from "@components/brand/charts/SovTierPanel";
-import PeerNetworkChart from "@components/brand/charts/PeerNetworkChart";
-import TerritoryHeatmap from "@components/brand/charts/TerritoryHeatmap";
-import KeywordTable from "@components/brand/charts/KeywordTable";
+import DashboardCard from "@components/geo/DashboardCard";
+import KpiTile from "@components/geo/KpiTile";
+import SectionHeader from "@components/geo/SectionHeader";
+import PageToolbar from "@components/geo/PageToolbar";
+import AlertCard from "@components/geo/AlertCard";
+import GeoTrendChart from "@components/geo/charts/GeoTrendChart";
+import LlmComparisonChart from "@components/geo/charts/LlmComparisonChart";
+import SovTierPanel from "@components/geo/charts/SovTierPanel";
+import PeerNetworkChart from "@components/geo/charts/PeerNetworkChart";
+import TerritoryHeatmap from "@components/geo/charts/TerritoryHeatmap";
+import KeywordTable from "@components/geo/charts/KeywordTable";
 import {
   ZoneEmpty,
   ZoneError,
   ZoneSkeleton,
-} from "@components/brand/ZoneState";
+} from "@components/geo/ZoneState";
 
 import {
   useGeoDeepDive,

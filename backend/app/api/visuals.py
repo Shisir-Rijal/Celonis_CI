@@ -1,4 +1,4 @@
-"""Competitors API router.
+"""Competitors / Visuals API router.
 
 GET /competitors/colors
     Returns the best brand color per tracked company, derived from the
@@ -6,11 +6,19 @@ GET /competitors/colors
     (#000000). Falls back to first secondary color when primary only
     contains those two.
 
+GET /visuals
+    Returns the full visuals payload (logo, colors, fonts, images, videos)
+    from the latest snapshot per tracked company.
+
+GET /visuals/{domain}
+    Returns the full visuals payload for a single company by domain.
+
 Requires a valid JWT via Authorization: Bearer <token>.
 """
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict
 
 from app.auth.dependencies import require_auth
 from app.rag.supabase_client import get_supabase
@@ -18,6 +26,7 @@ from app.rag.supabase_client import get_supabase
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/competitors", tags=["competitors"])
+visuals_router = APIRouter(prefix="/visuals", tags=["visuals"])
 
 # ---------------------------------------------------------------------------
 # Color picking
@@ -41,6 +50,141 @@ def _pick_color(colors_data: dict) -> str | None:
         return secondary[0]
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Full visuals response models
+# ---------------------------------------------------------------------------
+
+class FontInfoOut(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    type: str | None = None
+    weights: list[str] | None = None
+    sizes: list[str] | None = None
+
+
+class SourcedAssetOut(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    url: str
+    source_page: str | None = None
+
+
+class VisualsItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    company: str
+    url: str | None = None
+    title: str | None = None
+    logo: list[str] = []
+    colors: dict[str, list[str]] = {}
+    fonts: list[FontInfoOut] | None = None
+    images: list[SourcedAssetOut] | None = None
+    videos: list[SourcedAssetOut] = []
+    icons: dict[str, str] | None = None
+    run_at: str | None = None
+
+
+class VisualsResponse(BaseModel):
+    visuals: list[VisualsItem]
+    total: int
+    latest_run_at: str | None = None
+
+
+def _latest_visuals_rows(domain: str | None = None) -> list[dict]:
+    """Query research_snapshots for node='visuals', optionally filtered by domain."""
+    db = get_supabase()
+    query = (
+        db.table("research_snapshots")
+        .select("company, run_at, data")
+        .eq("node", "visuals")
+        .order("run_at", desc=True)
+    )
+    if domain:
+        query = query.eq("company", domain)
+    resp = query.execute()
+    rows: list[dict] = resp.data or []
+
+    # Keep only the latest snapshot per company (rows already desc by run_at)
+    seen: set[str] = set()
+    latest_rows: list[dict] = []
+    for row in rows:
+        company = row.get("company") or ""
+        if company not in seen:
+            seen.add(company)
+            latest_rows.append(row)
+    return latest_rows
+
+
+def _row_to_item(row: dict) -> VisualsItem:
+    data: dict = row.get("data") or {}
+    domain: str = row.get("company") or ""
+    payload = {**data, "company": data.get("company") or domain, "run_at": row.get("run_at")}
+    return VisualsItem(**payload)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@visuals_router.get("", response_model=VisualsResponse)
+async def get_visuals(
+    _: None = Depends(require_auth),
+) -> VisualsResponse:
+    """Return the full visuals payload (logo, colors, fonts, images, videos)
+    from the latest snapshot per tracked company.
+
+    Raises:
+        500: Unexpected database error.
+    """
+    try:
+        rows = _latest_visuals_rows()
+    except Exception as exc:
+        logger.error("visuals_query_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to query visuals snapshots.",
+        )
+
+    items = [_row_to_item(row) for row in rows]
+    latest_run_at: str | None = max((r.get("run_at") for r in rows), default=None)
+
+    return VisualsResponse(
+        visuals=items,
+        total=len(items),
+        latest_run_at=latest_run_at,
+    )
+
+
+@visuals_router.get("/{domain}", response_model=VisualsItem)
+async def get_visuals_for_domain(
+    domain: str,
+    _: None = Depends(require_auth),
+) -> VisualsItem:
+    """Return the full visuals payload for a single company by domain.
+
+    Raises:
+        404: No visuals snapshot found for this domain.
+        500: Unexpected database error.
+    """
+    try:
+        rows = _latest_visuals_rows(domain)
+    except Exception as exc:
+        logger.error("visuals_query_failed", domain=domain, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to query visuals snapshots.",
+        )
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No visuals snapshot found for domain '{domain}'.",
+        )
+
+    return _row_to_item(rows[0])
 
 
 # ---------------------------------------------------------------------------

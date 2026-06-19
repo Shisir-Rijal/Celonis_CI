@@ -4,8 +4,8 @@ import { useMemo } from "react";
 
 import { useEvents } from "@/lib/events/hooks";
 import { computeAnalysis } from "@/lib/events/analysis";
-import DashboardCard from "@components/brand/DashboardCard";
-import { ZoneSkeleton, ZoneError } from "@components/brand/ZoneState";
+import DashboardCard from "@components/geo/DashboardCard";
+import { ZoneSkeleton, ZoneError } from "@components/geo/ZoneState";
 
 export default function EventsKpis() {
   const { data, isLoading, isError, error } = useEvents();

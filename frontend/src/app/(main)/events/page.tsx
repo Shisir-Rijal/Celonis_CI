@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 
-import PageToolbar from "@components/brand/PageToolbar";
-import SectionHeader from "@components/brand/SectionHeader";
+import PageToolbar from "@components/geo/PageToolbar";
+import SectionHeader from "@components/geo/SectionHeader";
 import EventsKpis from "@components/events/EventsKpis";
 import EventsCharts from "@components/events/EventsCharts";
 import EventsAlerts from "@components/events/EventsAlerts";

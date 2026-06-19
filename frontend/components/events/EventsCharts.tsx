@@ -8,8 +8,8 @@ import {
 
 import { useEvents } from "@/lib/events/hooks";
 import { computeAnalysis } from "@/lib/events/analysis";
-import DashboardCard from "@components/brand/DashboardCard";
-import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/brand/ZoneState";
+import DashboardCard from "@components/geo/DashboardCard";
+import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 import { useCompetitorColors } from "@/lib/competitors/hooks";
 import { getCompetitorColor } from "@/lib/competitors/colors";
 
