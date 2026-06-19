@@ -7,8 +7,8 @@ import { useEvents } from "@/lib/events/hooks";
 import { useCompetitorColors } from "@/lib/competitors/hooks";
 import { getCompetitorColor } from "@/lib/competitors/colors";
 import type { EventItem } from "@/lib/events/types";
-import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/brand/ZoneState";
-import DashboardCard from "@components/brand/DashboardCard";
+import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
+import DashboardCard from "@components/geo/DashboardCard";
 
 // SSR-free Leaflet map
 const EventsMapCore = dynamic(() => import("./EventsMapCore"), {

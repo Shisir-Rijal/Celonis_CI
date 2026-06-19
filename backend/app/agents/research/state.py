@@ -333,6 +333,18 @@ class YoutubeData(BaseModel):
 
 # --Visuals-Node:
 
+class FontInfo(BaseModel):
+    name: str
+    type: str | None = None              # e.g. "Heading", "Body" (from Brandfetch)
+    weights: list[str] | None = None     # e.g. ["400", "700"]
+    sizes: list[str] | None = None       # e.g. ["14px", "48px"] — sizes the font is used at on-page
+
+
+class SourcedAsset(BaseModel):
+    url: str
+    source_page: str | None = None  # the page URL this image/video was scraped from
+
+
 class VisualsData(BaseData):
     # --- chunk constants ---
     source_origin: Literal["owned", "earned", "third_party", "internal"] = "owned"
@@ -345,10 +357,10 @@ class VisualsData(BaseData):
     # --- visuals-specific ---
     logo: list[str] = []
     colors: dict[str, list[str]] = {}  # {"primary": [...], "secondary": [...]}
-    fonts: list[str] | None = None
-    images: list[str] | None = None
+    fonts: list[FontInfo] | None = None
+    images: list[SourcedAsset] | None = None
     animations: dict[str, Any] | None = None
-    videos: list[str] = []
+    videos: list[SourcedAsset] = []
     icons: dict[str, Any] | None = None
 
 

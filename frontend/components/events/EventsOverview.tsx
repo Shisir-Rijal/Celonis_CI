@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 
-import SectionHeader from "@components/brand/SectionHeader";
-import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/brand/ZoneState";
+import SectionHeader from "@components/geo/SectionHeader";
+import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 import EventCard from "@components/events/EventCard";
 import { useEvents } from "@/lib/events/hooks";
 import type { EventItem } from "@/lib/events/types";
