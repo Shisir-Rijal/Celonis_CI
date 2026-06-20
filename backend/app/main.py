@@ -11,7 +11,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, brand, chat, event, health, visuals, workflows
+from app.api import auth, brand, chat, event, health, news, visuals, workflows
 from app.config import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -64,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(brand.router)
     app.include_router(visuals.router)
     app.include_router(event.router)
+    app.include_router(news.router)
 
     # --- Root info endpoint ---
     @app.get("/", tags=["meta"])
