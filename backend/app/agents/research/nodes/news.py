@@ -316,18 +316,20 @@ if __name__ == "__main__":
     structlog.configure(processors=[structlog.dev.ConsoleRenderer()])
 
     async def main():
-        from app.agents.research.state import VisualsData, PositioningData, FinancialData, SocialData, SeoGeoData, EventsData, NewsletterData
+        from app.agents.research.state import SeoGeoData, EventsData
 
         state = ResearchState(
             competitor_domain="ibm.com",
-            visuals=VisualsData(),
-            positioning=PositioningData(),
-            financials=FinancialData(),
-            socials=SocialData(),
+            visuals=None,
+            positioning=None,
+            financials=None,
+            socials=None,
+            youtube=None,
             seogeo=SeoGeoData(),
             news=NewsData(),
             events=EventsData(),
-            newsletter=NewsletterData(),
+            newsletter=None,
+            wording=None,
             errors=[],
             completed_nodes=[],
         )
