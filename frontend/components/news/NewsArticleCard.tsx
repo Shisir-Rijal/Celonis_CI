@@ -2,7 +2,7 @@
 
 import { ExternalLink, Calendar, User } from "lucide-react";
 
-import DashboardCard from "@components/brand/DashboardCard";
+import DashboardCard from "@components/geo/DashboardCard";
 import type { NewsArticle } from "@/lib/news/types";
 import { getCompetitorColor } from "@/lib/competitors/colors";
 import { useCompetitorColors } from "@/lib/competitors/hooks";

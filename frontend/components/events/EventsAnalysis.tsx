@@ -15,10 +15,10 @@ import {
 
 import { useEvents } from "@/lib/events/hooks";
 import type { EventItem } from "@/lib/events/types";
-import DashboardCard from "@components/brand/DashboardCard";
-import AlertCard from "@components/brand/AlertCard";
-import SectionHeader from "@components/brand/SectionHeader";
-import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/brand/ZoneState";
+import DashboardCard from "@components/geo/DashboardCard";
+import AlertCard from "@components/geo/AlertCard";
+import SectionHeader from "@components/geo/SectionHeader";
+import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 
 // ---------------------------------------------------------------------------
 // Colours

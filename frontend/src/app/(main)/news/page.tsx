@@ -3,9 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 
-import SectionHeader from "@components/brand/SectionHeader";
-import PageToolbar from "@components/brand/PageToolbar";
-import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/brand/ZoneState";
+import SectionHeader from "@components/geo/SectionHeader";
+import PageToolbar from "@components/geo/PageToolbar";
+import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 import CompanyChipFilter from "@components/news/CompanyChipFilter";
 import NewsArticleCard from "@components/news/NewsArticleCard";
 import { useNewsList } from "@/lib/news/hooks";

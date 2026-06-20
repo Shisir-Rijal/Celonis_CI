@@ -4,9 +4,9 @@ import { useMemo } from "react";
 
 import { useEvents } from "@/lib/events/hooks";
 import { computeAnalysis } from "@/lib/events/analysis";
-import DashboardCard from "@components/brand/DashboardCard";
-import AlertCard from "@components/brand/AlertCard";
-import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/brand/ZoneState";
+import DashboardCard from "@components/geo/DashboardCard";
+import AlertCard from "@components/geo/AlertCard";
+import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 
 export default function EventsAlerts() {
   const { data, isLoading, isError } = useEvents();

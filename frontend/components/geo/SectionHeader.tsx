@@ -30,7 +30,7 @@ export default function SectionHeader({
       )}
     >
       <div className="flex flex-col">
-        <h3 className="text-lg font-medium text-primary-white leading-tight">
+        <h3 className="text-7xl font-medium text-primary-white leading-tight">
           {label}
         </h3>
         {description ? (

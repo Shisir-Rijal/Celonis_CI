@@ -2,7 +2,7 @@
 
 import { MapPin, Users, ExternalLink, Calendar } from "lucide-react";
 
-import DashboardCard from "@components/brand/DashboardCard";
+import DashboardCard from "@components/geo/DashboardCard";
 import type { EventItem } from "@/lib/events/types";
 import { useCompetitorColors } from "@/lib/competitors/hooks";
 import { getCompetitorColor } from "@/lib/competitors/colors";
