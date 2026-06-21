@@ -3,7 +3,6 @@ from typing import TypedDict, Annotated, Any
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, timezone
 import operator
-from app.models.schemas import ChunkMetadata
 from datetime import date
 from typing import Literal
 from app.agents.shared.utils.youtube import VideoData
@@ -343,6 +342,7 @@ class FontInfo(BaseModel):
 class SourcedAsset(BaseModel):
     url: str
     source_page: str | None = None  # the page URL this image/video was scraped from
+    category: str | None = None  # images only: "diagram" | "screenshot" | "photo" | "illustration" | "other"
 
 
 class VisualsData(BaseData):
@@ -356,7 +356,7 @@ class VisualsData(BaseData):
 
     # --- visuals-specific ---
     logo: list[str] = []
-    colors: dict[str, list[str]] = {}  # {"primary": [...], "secondary": [...]}
+    colors: dict[str, Any] = {}  # {"primary": [...], "secondary": [...], "semantic": {hex: label}}
     fonts: list[FontInfo] | None = None
     images: list[SourcedAsset] | None = None
     animations: dict[str, Any] | None = None

@@ -8,6 +8,7 @@ import { BrandingOverview } from "@components/visuals/BrandingOverview";
 import { ColorComparison } from "@components/visuals/ColorComparison";
 import { FontComparison } from "@components/visuals/FontComparison";
 import { ImageryArchetypes } from "@components/visuals/ImageryArchetypes";
+import { ArchetypesSlider } from '@components/visuals/ArchetypesSlider'
 import { ImageryDimensionBreakdown } from "@components/visuals/ImageryDimensionBreakdown";
 import { ImagerySimilarityNetwork } from "@components/visuals/charts/ImagerySimilarityNetwork";
 import { LogoDimensionBreakdown } from "@components/visuals/LogoDimensionBreakdown";
@@ -64,23 +65,39 @@ export default function EventsPage() {
         <VisualTrendCards />
       </SectionWrapper>
 
-      {/* Zone 2 — Colors */}
+      {/* Zone 2 — Overview */}
       <SectionWrapper
-        label="Color Comparison"
+        label="Branding Cards"
+        description="Scraped visual identity across tracked competitors — scraped from their website."
+      >
+        <BrandingOverview />
+      </SectionWrapper>
+
+      {/* Zone 3 — Archetypes */}
+      <SectionWrapper
+        label="Archetypes"
+        description="Scraped visual identity across tracked competitors — scraped from their website."
+      >
+        <ArchetypesSlider />
+      </SectionWrapper>
+
+      {/* Zone 4 — Colors */}
+      <SectionWrapper
+        label="Colors"
         description="Analysis of brand colors"
       >
         <ColorComparison />
       </SectionWrapper>
 
-      {/* Zone 2 — Fonts */}
+      {/* Zone 5 — Fonts */}
       <SectionWrapper
-        label="Fonts Comparison"
+        label="Fonts"
         description="Analysis of brand fonts"
       >
         <FontComparison />
       </SectionWrapper>
 
-      {/* Zone 3 — Logos */}
+      {/* Zone 6 — Logos */}
       <SectionWrapper
         label="Logos"
         description="Analysis of brand logos"
@@ -91,7 +108,7 @@ export default function EventsPage() {
         </div>
       </SectionWrapper>
 
-      {/* Zone 4 — Imagery */}
+      {/* Zone 7 — Imagery */}
       <SectionWrapper
         label="Images"
         description="Analysis of imagery"
@@ -105,13 +122,7 @@ export default function EventsPage() {
         </div>
       </SectionWrapper>
 
-      {/* Zone 3 — Overview */}
-      <SectionWrapper
-        label="Branding Cards"
-        description="Scraped visual identity across tracked competitors — scraped from their website."
-      >
-        <BrandingOverview />
-      </SectionWrapper>
+
     </div>
   );
 }

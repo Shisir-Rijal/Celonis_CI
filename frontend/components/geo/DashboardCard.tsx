@@ -26,18 +26,18 @@ export default function DashboardCard({
     <div
       className={twMerge(
         clsx(
-          "rounded-xl border border-white/8 bg-neutral-grey-30 p-6",
+          "rounded-sm border-2 border-neutral-grey-30 p-6",
           className
         )
       )}
     >
       {label ? (
         <div className="mb-5">
-          <div className="text-[11px] tracking-[0.16em] uppercase text-neutral-grey-00 font-medium">
+          <div className="text-[24px] text-neutral-grey-00 font-medium">
             {label}
           </div>
           {sublabel ? (
-            <div className="mt-1 text-xs text-neutral-grey-10">{sublabel}</div>
+            <div className="mt-1 text-sm text-neutral-grey-20">{sublabel}</div>
           ) : null}
         </div>
       ) : null}

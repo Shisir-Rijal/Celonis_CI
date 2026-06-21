@@ -3,6 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 import asyncio
+import html as html_lib  # aliased — this module uses `html` as a loop variable name (raw page HTML)
 import io
 import json
 import re
@@ -45,17 +46,31 @@ async def _scrape_urls(urls: list[str]) -> list[tuple[str, str, str]]:
     return [r for r in results if r is not None]
 
 
+def _www_normalized_host(url: str) -> str:
+    h = (urlparse(url).hostname or "").lower()
+    return h[4:] if h.startswith("www.") else h
+
+
 async def _get_page_contents(domain: str, num_pages: int = 5) -> list[tuple[str, str, str]]:
     app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
     homepage = f"https://{domain}"
 
-    map_result = await asyncio.to_thread(app.map_url, homepage, limit=num_pages)
+    # map_url frequently returns pages on unrelated subdomains (e.g. an
+    # academy/LMS or docs subdomain running a completely different design
+    # system) — over-fetch a larger candidate pool so that after filtering
+    # those out, num_pages worth of genuine main-site pages still remain.
+    map_result = await asyncio.to_thread(app.map_url, homepage, limit=num_pages * 4)
     mapped_urls: list[str] = getattr(map_result, "links", None) or []
 
+    home_host = _www_normalized_host(homepage)
+    same_site = [u for u in mapped_urls if _www_normalized_host(u) == home_host]
+
     # map_url's ordering doesn't guarantee the homepage itself is among the
-    # first `num_pages` results, but it's where the primary logo, nav, and
-    # hero styling usually live — always scrape it.
-    urls = [homepage] + [u for u in mapped_urls if u != homepage]
+    # first results, but it's where the primary logo, nav, and hero styling
+    # usually live — always scrape it. Fall back to the unfiltered pool if
+    # filtering to the main host would leave too few pages to work with.
+    pool = same_site if len(same_site) >= num_pages else mapped_urls
+    urls = [homepage] + [u for u in pool if u != homepage]
     urls = urls[:num_pages]
     logger.info("map_urls_found", count=len(urls), domain=domain)
 
@@ -230,6 +245,12 @@ def _extract_asset_from_tag(tag: str, page_url: str) -> tuple[str | None, str]:
     if not raw_src:
         srcset_match = re.search(r'\b(?:srcset|data-srcset)\s*=\s*["\']([^"\']*)["\']', tag, re.IGNORECASE)
         raw_src = _first_srcset_url(srcset_match.group(1)) if srcset_match else None
+    # HTML attributes legitimately spell "&" as "&amp;" — without unescaping,
+    # a URL like "...&amp;w=3840&amp;q=75" gets stored with the literal
+    # entity still in it, which most CDNs (Next.js image API included) 400
+    # on, since "amp;w" isn't a recognized query param. That produced a
+    # broken-image render for every page using this pattern.
+    raw_src = html_lib.unescape(raw_src) if raw_src else raw_src
     url = _resolve_asset_url(raw_src, page_url)
     alt_match = re.search(r'\balt\s*=\s*["\']([^"\']*)["\']', tag, re.IGNORECASE)
     return url, (alt_match.group(1) if alt_match else "")
@@ -263,6 +284,8 @@ def _is_third_party_logo(url: str, context: str) -> bool:
         return True
     if any(name in low_url for name in _SOCIAL_PLATFORM_NAMES):
         return True
+    if any(name in low_url for name in _THIRD_PARTY_BRAND_KEYWORDS):
+        return True
     return False
 
 
@@ -276,6 +299,22 @@ def _url_path_lower(url: str) -> str:
     return f"{parsed.path}?{parsed.query}".lower()
 
 
+def _company_name_in_path(url: str, company_lower: str) -> bool:
+    """Whether `company_lower` genuinely identifies this URL as the
+    company's own asset — not just a coincidental match inside a generic
+    CDN bucket-name segment. Many sites file every asset (including OTHER
+    brands' customer/partner logos) under a path like
+    ".../servicenow-assets/.../logo-siemens-white.svg" — the bare substring
+    check would call that "ServiceNow's own" purely because of the bucket
+    name, even though the actual logo in it is Siemens'. Scrubbing that one
+    well-known noisy pattern before checking removes the false signal
+    without touching genuine matches (e.g. ".../logo-white_<hash>.svg"
+    sitting under an "Apromore_March_2024" folder still matches)."""
+    path = _url_path_lower(url)
+    scrubbed = re.sub(rf"{re.escape(company_lower)}[-_]?assets", "", path)
+    return company_lower in scrubbed
+
+
 # Brandfetch's own CDN regularly serves files literally named "logo.svg" with
 # no company name anywhere in the URL — trust those rather than applying the
 # stricter "company name must appear" rule meant for other-domain fallback scans.
@@ -285,13 +324,21 @@ _TRUSTED_LOGO_CDN_HOSTS = {"cdn.brandfetch.io"}
 def _looks_like_own_logo(url: str, company: str) -> bool:
     """Used to retroactively re-check logos already stored from a previous run
     against the (possibly newer/stricter) company-name requirement, without
-    punishing legitimate Brandfetch URLs that never carry the company name."""
+    punishing legitimate Brandfetch URLs that never carry the company name.
+
+    Requires the company's own name in the URL path for everything else —
+    including URLs with no "logo" in them at all. That used to auto-pass,
+    on the theory that a real logo can be served from a hash-named CDN path
+    with no descriptive filename — but the same permissiveness let plain
+    content images that slipped into `logo` via a loose alt-text match
+    (no "logo" in their URL either) survive re-validation forever, since
+    no alt/context text is available retroactively to catch them any other
+    way (e.g. Palantir's "Adobe_Express_-_file.png", UiPath's
+    "latest_thumb_AgenticSolutions.png")."""
     host = (urlparse(url).hostname or "").lower()
     if any(host == h or host.endswith("." + h) for h in _TRUSTED_LOGO_CDN_HOSTS):
         return True
-    if "logo" not in url.lower():
-        return True
-    return company.lower() in _url_path_lower(url)
+    return _company_name_in_path(url, company.lower())
 
 
 def _extract_logos(data: dict, pages: list[tuple[str, str, str]], company: str) -> list[str]:
@@ -310,33 +357,46 @@ def _extract_logos(data: dict, pages: list[tuple[str, str, str]], company: str) 
     # Fallback: scan rawHtml (not just markdown, which often strips header/nav
     # chrome out as "boilerplate") for img-like tags. The site's own logo
     # almost always lives inside <header>/<nav>, so those regions are scanned
-    # first and preferred; anywhere else on the page is a fallback. Within
-    # header/nav we also accept images whose URL has no "logo" in it at all
-    # as long as the alt text matches the company name (many real logos are
-    # served from a CDN asset hash with no descriptive filename — Microsoft's
-    # own nav logo is exactly this: alt="Microsoft", no "logo" in the URL).
+    # first and preferred; anywhere else on the page is a fallback.
     #
-    # Outside header/nav, "logo" in the URL is NOT enough on its own — that's
+    # "logo" in the URL is NEVER enough on its own, in EITHER region — that's
     # exactly where customer/partner logo carousels live (e.g. ARIS's
-    # "suva-logo.svg" or Apromore's "Logo-One.nz.png", neither of which trips
-    # any of the known third-party keyword/context heuristics). Requiring the
-    # company's own name somewhere in the URL/alt there filters those out,
+    # "suva-logo.svg", Apromore's "Logo-One.nz.png", or ServiceNow's
+    # "logo-siemens-white.svg"/"logo-fedex-white.svg" sitting inside an
+    # oversized <nav> that turned out to also contain a customer-logo strip).
+    # The company's own name must also appear somewhere in the URL/alt,
     # mirroring the same rule _classify_image already applies for images.
+    #
+    # Within header/nav we additionally accept images with NO "logo" in the
+    # URL at all, purely by alt text (many real logos are served from a CDN
+    # asset hash with no descriptive filename — Microsoft's own nav logo is
+    # exactly this: alt="Microsoft", no "logo" in the URL) — but that alt
+    # text must be essentially JUST the company name, not merely contain it
+    # somewhere; a loose substring match let unrelated content images
+    # through whenever their caption happened to mention the company (e.g.
+    # Palantir's "Adobe_Express_-_file.png" captioned with a Palantir
+    # customer-story headline, or UiPath's marketing thumbnails captioned
+    # "UiPath Agentic Solutions...").
     header_urls: list[str] = []
     other_urls: list[str] = []
     company_lower = company.lower()
 
+    def _alt_is_just_company_name(alt: str) -> bool:
+        stripped = re.sub(r"\b(logo|icon)\b", "", alt.lower()).strip()
+        return stripped == company_lower
+
     def _scan_region(
-        region_html: str, page_html: str, page_url: str, bucket: list[str], match_alt: bool, require_company: bool
+        region_html: str, page_html: str, page_url: str, bucket: list[str], allow_alt_only_match: bool
     ) -> None:
         for tag in _candidate_asset_tags(region_html):
             url, alt = _extract_asset_from_tag(tag, page_url)
             if not url or url in seen:
                 continue
-            looks_like_logo = "logo" in url.lower() or (match_alt and alt and company_lower in alt.lower())
-            if not looks_like_logo:
+            url_has_logo = "logo" in url.lower()
+            alt_only_match = allow_alt_only_match and not url_has_logo and _alt_is_just_company_name(alt)
+            if not url_has_logo and not alt_only_match:
                 continue
-            if require_company and company_lower not in _url_path_lower(url) and company_lower not in alt.lower():
+            if url_has_logo and not _company_name_in_path(url, company_lower) and company_lower not in alt.lower():
                 continue
             context = _html_window_text(page_html, tag)
             if _is_third_party_logo(url, context):
@@ -347,15 +407,15 @@ def _extract_logos(data: dict, pages: list[tuple[str, str, str]], company: str) 
     for page_url, markdown, html in pages:
         header_html = "".join(re.findall(r'<header\b.*?</header>', html, re.IGNORECASE | re.DOTALL))
         header_html += "".join(re.findall(r'<nav\b.*?</nav>', html, re.IGNORECASE | re.DOTALL))
-        _scan_region(header_html, html, page_url, header_urls, match_alt=True, require_company=False)
-        _scan_region(html, html, page_url, other_urls, match_alt=False, require_company=True)
+        _scan_region(header_html, html, page_url, header_urls, allow_alt_only_match=True)
+        _scan_region(html, html, page_url, other_urls, allow_alt_only_match=False)
 
         for src in re.findall(r'!\[([^\]]*)\]\((https?://[^\)]+)\)', markdown):
             alt, url = src
             if (
                 "logo" in url.lower()
                 and url not in seen
-                and (company_lower in _url_path_lower(url) or company_lower in alt.lower())
+                and (_company_name_in_path(url, company_lower) or company_lower in alt.lower())
                 and not _is_third_party_logo(url, "")
             ):
                 seen.add(url)
@@ -381,12 +441,146 @@ def _is_grayscale(hex_code: str, threshold: int = 12) -> bool:
     return max(r, g, b) - min(r, g, b) <= threshold
 
 
+# Design-token systems name their status/utility colors after what they
+# mean (e.g. `--fnd-color-semantic-border-success: #0b9e23`), not after any
+# real brand identity — checked in order, first match wins. Kept broader than
+# what's actually reported (see _REPORTED_SEMANTIC_LABELS below) so e.g. a
+# "disabled"-state grey-blue is still excluded from primary/secondary
+# candidates even though it's not itself surfaced as a semantic color.
+_SEMANTIC_KEYWORD_LABELS: list[tuple[str, str]] = [
+    ("disabled", "disabled"),
+    ("success", "success"),
+    ("positive", "success"),
+    ("danger", "error"),
+    ("error", "error"),
+    ("negative", "error"),
+    ("critical", "error"),
+    ("destructive", "error"),
+    ("warning", "warning"),
+    ("warn", "warning"),
+    ("caution", "warning"),
+    ("info", "info"),
+]
+
+# Only these are reported as "semantic colors" to the user — error/warning/
+# success cover what's actually meaningful as a status color; "disabled"/
+# "info" stay excluded from primary/secondary above but aren't themselves
+# interesting enough to surface.
+_REPORTED_SEMANTIC_LABELS = {"success", "warning", "error"}
+
+# Default color-palette swatches that ship with common CMS/editor stacks
+# regardless of whether the site's content actually uses them — e.g.
+# WordPress's Gutenberg block editor injects these 9 preset colors into
+# every theme's compiled CSS, so on WP sites they show up as "used" in the
+# stylesheet even when nothing on the page is actually styled with them.
+_FRAMEWORK_DEFAULT_COLORS = {
+    "#F78DA7", "#CF2E2E", "#FF6900", "#FCB900", "#7BDCB5",
+    "#00D084", "#8ED1FC", "#0693E3", "#9B51E0",
+}
+
+# A color used in only one CSS rule block reads as a one-off illustration/
+# icon fill, not a deliberate brand choice — never worth storing.
+_MIN_COLOR_USAGE_COUNT = 2
+
+
+def _css_property_name_at(css_text: str, pos: int) -> str:
+    """The property name of the CSS declaration whose value starts at `pos`
+    (e.g. "background-color" in "background-color: #fff;").
+
+    Scoped to exactly the current declaration (from the last `;`/`{` up to
+    the `:` right before this value) rather than a fixed-size character
+    window — a blind window bleeds into the *previous* declaration's name
+    (e.g. matching "success" from the prior line while the actual property
+    for this value is "...-danger") once enough short declarations are
+    packed together, as a real design-token block often does."""
+    stmt_start = max(css_text.rfind(";", 0, pos), css_text.rfind("{", 0, pos)) + 1
+    colon_idx = css_text.rfind(":", stmt_start, pos)
+    return css_text[stmt_start:colon_idx].strip().lower() if colon_idx != -1 else ""
+
+
+def _extract_semantic_colors(css_text: str) -> dict[str, str]:
+    """Hex colors whose CSS property/custom-property name (e.g.
+    `--fnd-color-semantic-border-success:`) suggests a semantic/status
+    meaning rather than an intentional brand color. These are genuinely used
+    somewhere on the site (forms, alerts, badges) — just not as part of the
+    brand palette — so they're kept out of primary/secondary and reported
+    separately instead (see _REPORTED_SEMANTIC_LABELS for which labels
+    actually surface to the user)."""
+    semantic: dict[str, str] = {}
+    for match in _HEX_COLOR_RE.finditer(css_text):
+        hex_code = _normalize_hex(match.group(1))
+        if _is_grayscale(hex_code) or hex_code in semantic:
+            continue
+        property_name = _css_property_name_at(css_text, match.start())
+        for keyword, label in _SEMANTIC_KEYWORD_LABELS:
+            if keyword in property_name:
+                semantic[hex_code] = label
+                break
+    return semantic
+
+
+# Property names that carry a color but aren't "the section's background" or
+# "the text's font color" — these would otherwise slip through a naive
+# "-color" suffix check and pollute the secondary-color pool with decorative
+# accents that were never the actual ask.
+_DECORATIVE_COLOR_PROPERTY_HINTS = (
+    "border", "outline", "shadow", "decoration", "caret", "accent",
+    "fill", "stroke", "placeholder", "scrollbar", "ring",
+)
+
+
+def _is_section_or_text_color_property(property_name: str) -> bool:
+    if any(hint in property_name for hint in _DECORATIVE_COLOR_PROPERTY_HINTS):
+        return False
+    return "background" in property_name or property_name == "color" or property_name.endswith("-color")
+
+
+def _rank_section_colors(css_text: str, top_n: int = 40) -> list[tuple[str, int]]:
+    """Hex colors declared specifically as a `background`/`background-color`
+    (a section's own background) or a `color`/`*-color` font/text color —
+    never border/outline/shadow/etc — ranked by how many separate rule
+    blocks use them this way. Secondary brand colors should be colors
+    actually painted onto the page as a section background or text color,
+    not just any hex that happens to appear somewhere in the CSS.
+
+    Unlike _rank_css_colors (the primary fallback), grayscale is NOT
+    excluded here — a genuinely deliberate neutral grey (e.g. a muted
+    secondary-text or card-background grey) is a real, common secondary
+    color choice, and this pool is already scoped tightly enough (only
+    actual background/text-color declarations) that it isn't drowned in
+    the same way the broad "any usage" primary pool was. The LLM step that
+    picks the final secondary colors is relied on to still tell a plain
+    white-page-background or black-body-text default apart from an
+    intentional grey accent."""
+    counts: dict[str, int] = {}
+    for block_match in re.finditer(r'\{([^{}]*)\}', css_text):
+        block, block_start = block_match.group(1), block_match.start(1)
+        seen_in_block: set[str] = set()
+        for m in _HEX_COLOR_RE.finditer(block):
+            hex_code = _normalize_hex(m.group(1))
+            if _is_section_or_text_color_property(_css_property_name_at(css_text, block_start + m.start())):
+                seen_in_block.add(hex_code)
+        for hex_code in seen_in_block:
+            counts[hex_code] = counts.get(hex_code, 0) + 1
+    return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
+
+
 def _rank_css_colors(css_text: str, top_n: int = 25) -> list[tuple[str, int]]:
     """Distinct chromatic (non-grayscale) hex colors in `css_text`, ranked by
     how many separate CSS rule blocks use them. Frequency is a simple but
     effective proxy for "this is an actual brand/accent color" vs. a one-off
     illustration color — and it's why a heavily-used color like a brand
     purple won't get lost.
+
+    Grayscale stays excluded even here (the CSS-frequency fallback path):
+    virtually every website uses black text and a white/near-white
+    background somewhere, so frequency alone can't tell a deliberately
+    black/white *brand* color apart from that universal baseline — letting
+    grayscale through here let black/white win by sheer frequency over a
+    company's actual signature color (e.g. Celonis's green) on every site
+    tested. A genuinely black/white primary is instead expected to come
+    from Brandfetch (see _brandfetch_primary_colors), which doesn't have
+    this frequency-confusion problem.
 
     Counted per rule block (not per raw literal occurrence): design-token
     systems often declare dozens of named custom properties
@@ -423,7 +617,7 @@ def _same_site(url_a: str, url_b: str) -> bool:
     return _base_domain(host_a) == _base_domain(host_b)
 
 
-async def _fetch_external_stylesheets(pages: list[tuple[str, str, str]], limit: int = 6) -> list[str]:
+async def _fetch_external_stylesheets(pages: list[tuple[str, str, str]], limit: int = 12) -> list[str]:
     """Fetch the CSS of <link rel="stylesheet"> files referenced by the scraped
     pages. Most sites keep their real color palette in compiled, external
     stylesheets rather than inline <style> blocks, which inline-only parsing
@@ -434,7 +628,8 @@ async def _fetch_external_stylesheets(pages: list[tuple[str, str, str]], limit: 
     unrelated colors and was flooding the ranked list with noise (e.g. a
     random widget blue showing up as a "brand color").
     """
-    hrefs: set[str] = set()
+    hrefs: list[str] = []
+    seen: set[str] = set()
     for page_url, _, html in pages:
         raw_hrefs = re.findall(
             r'<link\b[^>]*rel=["\']stylesheet["\'][^>]*href=["\']([^"\']+)["\']', html, re.IGNORECASE
@@ -444,8 +639,13 @@ async def _fetch_external_stylesheets(pages: list[tuple[str, str, str]], limit: 
         )
         for href in raw_hrefs:
             resolved = _resolve_asset_url(href, page_url)
-            if resolved and _same_site(resolved, page_url):
-                hrefs.add(resolved)
+            # Dedup while preserving discovery order — a plain `set` would
+            # iterate in a hash-randomized order, making which stylesheets
+            # get fetched (and thus which colors get found) non-deterministic
+            # across runs once truncated to `limit`.
+            if resolved and resolved not in seen and _same_site(resolved, page_url):
+                seen.add(resolved)
+                hrefs.append(resolved)
 
     async def _fetch(url: str) -> str:
         try:
@@ -457,58 +657,121 @@ async def _fetch_external_stylesheets(pages: list[tuple[str, str, str]], limit: 
             logger.warning("stylesheet_fetch_failed", url=url, error=str(e))
         return ""
 
-    results = await asyncio.gather(*[_fetch(h) for h in list(hrefs)[:limit]])
+    results = await asyncio.gather(*[_fetch(h) for h in hrefs[:limit]])
     return [r for r in results if r]
+
+
+def _brandfetch_primary_colors(data: dict, limit: int = 3) -> list[str]:
+    """Brandfetch's own brand-color API, taken as-is for primary — it's
+    curated by Brandfetch specifically as "the official brand colors",
+    including legitimate black/white ones a CSS-frequency scan would
+    otherwise discard as grayscale noise. Only used as a fallback source for
+    *primary*; secondary/semantic always come from the company's own CSS."""
+    seen: set[str] = set()
+    colors: list[str] = []
+    for c in data.get("colors", []):
+        hex_code = c.get("hex")
+        if not hex_code:
+            continue
+        normalized = _normalize_hex(hex_code.lstrip("#"))
+        if normalized not in seen:
+            seen.add(normalized)
+            colors.append(normalized)
+    return colors[:limit]
 
 
 async def _extract_colors(
     data: dict, pages: list[tuple[str, str, str]], openai: AsyncOpenAI
-) -> dict[str, list[str]]:
-    # Primary: Brandfetch
-    primary = [c.get("hex") for c in data.get("colors", []) if c.get("hex")]
-    primary_set = {c.lower() for c in primary}
+) -> dict[str, Any]:
+    """Primary tries Brandfetch first (see _brandfetch_primary_colors); only
+    when Brandfetch has nothing does primary fall back to the top 3
+    most-used chromatic colors in the site's own CSS (_rank_css_colors),
+    taken directly by frequency rather than an LLM judgment call. Secondary
+    and semantic always come exclusively from the company's own compiled
+    CSS — inline <style> blocks AND external stylesheets — never from
+    Brandfetch, which can derive "accent colors" from logo/image analysis
+    rather than the site's actual design tokens."""
+    brandfetch_primary = _brandfetch_primary_colors(data)
 
-    # Secondary: the real palette usually lives in compiled CSS — inline
-    # <style> blocks AND external stylesheets — ranked by frequency so a
-    # heavily-used accent color (e.g. a brand purple) reliably surfaces,
-    # then handed to OpenAI to pick the brand-relevant ones.
+    # _get_page_contents already prefers same-host pages, but filter again
+    # defensively in case its fallback kicked in — an unrelated subdomain's
+    # CSS (different design system entirely) would otherwise drown out the
+    # actual marketing site's own colors. `pages[0]` is always the homepage.
+    homepage_host = _www_normalized_host(pages[0][0]) if pages else ""
+    own_pages = [p for p in pages if _www_normalized_host(p[0]) == homepage_host] if homepage_host else pages
+    own_pages = own_pages or pages
+
     css_parts: list[str] = []
-    for _, _, html in pages[:5]:
+    for _, _, html in own_pages[:5]:
         css_parts.extend(re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.IGNORECASE))
-    css_parts.extend(await _fetch_external_stylesheets(pages))
+    css_parts.extend(await _fetch_external_stylesheets(own_pages))
 
-    scraped: list[str] = []
     css_content = " ".join(css_parts)
-    ranked_colors = _rank_css_colors(css_content)
-    if ranked_colors:
-        color_list = ", ".join(f"{hex_code} (used {count}x)" for hex_code, count in ranked_colors)
-        response = await openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": (
-                    "These are the most frequently used non-grayscale hex colors found in a "
-                    "company's website CSS, with usage counts. Pick the ones that look like "
-                    "real brand/accent colors (buttons, highlights, headings, logos) rather than "
-                    "incidental illustration or one-off colors. A color used many times is "
-                    "likely a brand color even if it's unusual (e.g. purple, teal). "
-                    'Return JSON: {"colors": ["#RRGGBB", ...]}. Max 8 colors. Empty list if none found.'
-                )},
-                {"role": "user", "content": color_list},
-            ],
-            response_format={"type": "json_object"},
+
+    # Status/utility design-tokens (success, error, warning, ...) are
+    # genuinely used somewhere on the site but aren't intentional brand
+    # colors — pull them out before ranking so they can't be picked as a
+    # "secondary" brand color. Only error/warning/success are actually
+    # reported back; "disabled"/"info" stay excluded from the candidate
+    # pools below without being surfaced as their own thing.
+    all_semantic_colors = _extract_semantic_colors(css_content)
+    reported_semantic_colors = {
+        h: label for h, label in all_semantic_colors.items() if label in _REPORTED_SEMANTIC_LABELS
+    }
+
+    def _eligible(hex_code: str, count: int) -> bool:
+        return (
+            hex_code not in all_semantic_colors
+            and hex_code not in _FRAMEWORK_DEFAULT_COLORS
+            and count >= _MIN_COLOR_USAGE_COUNT
         )
-        scraped = json.loads(response.choices[0].message.content).get("colors", [])
 
-    if not primary:
-        # No Brandfetch data at all (missing brand, or a path-scoped domain
-        # where Brandfetch is skipped entirely) — use the CSS-derived colors
-        # as primary instead of silently leaving it empty.
-        primary = scraped
-        secondary: list[str] = []
+    # Secondary is deliberately narrower than "any frequent CSS color" — it
+    # must actually be painted onto the page as a section background or a
+    # font/text color, not just any hex that shows up somewhere in the
+    # stylesheet (e.g. a border or shadow tint nobody would call a brand color).
+    secondary_candidates = [(h, c) for h, c in _rank_section_colors(css_content) if _eligible(h, c)]
+
+    def _format(colors: list[tuple[str, int]]) -> str:
+        return ", ".join(f"{hex_code} (used {count}x)" for hex_code, count in colors) or "(none)"
+
+    if brandfetch_primary:
+        primary = brandfetch_primary
     else:
-        secondary = [c for c in scraped if c.lower() not in primary_set]
+        # No Brandfetch data at all — fall back to the top 3 most-used
+        # colors from the site's own CSS (grayscale still excluded, see
+        # _rank_css_colors), taken directly by frequency rank rather than
+        # an LLM judgment call.
+        primary_candidates = [(h, c) for h, c in _rank_css_colors(css_content) if _eligible(h, c)]
+        primary = [h for h, _ in primary_candidates[:3]]
 
-    return {"primary": primary, "secondary": secondary}
+    primary_set = {c.lower() for c in primary}
+    if not secondary_candidates:
+        return {"primary": primary, "secondary": [], "semantic": reported_semantic_colors}
+
+    response = await openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": (
+                "These are hex colors declared as a section background or font/text color "
+                "in a company's own website CSS, each with how many separate CSS rule blocks "
+                "use it. Pick clearly intentional secondary/accent colors — used for "
+                "highlights but not the main identity — up to 8. A deliberate neutral grey "
+                "(e.g. muted secondary text, a card/section background) is a perfectly valid "
+                "secondary color — don't reject it just for being grayscale. But leave out the "
+                "page's generic plain white background or plain black body text (the "
+                "universal base style every page has, not a brand choice), anything that "
+                "looks like a generic UI-framework/CMS default swatch, or a one-off "
+                "illustration color.\n"
+                'Return JSON: {"secondary": ["#RRGGBB", ...]}. Empty list if nothing qualifies.'
+            )},
+            {"role": "user", "content": _format(secondary_candidates)},
+        ],
+        response_format={"type": "json_object"},
+    )
+    picked = json.loads(response.choices[0].message.content)
+    secondary = [c for c in picked.get("secondary", [])[:8] if c.lower() not in primary_set]
+    return {"primary": primary, "secondary": secondary, "semantic": reported_semantic_colors}
 
 
 _GOOGLE_FONTS_RE = re.compile(r'fonts\.googleapis\.com/css[^"\']*[?&]family=([^"\'&]+)', re.IGNORECASE)
@@ -631,6 +894,10 @@ _ICON_KEYWORDS = {"icon", "favicon", "apple-touch", "sprite", "social-icon"}
 _THIRD_PARTY_PATH_KEYWORDS = {
     "partner", "partners", "client", "clients", "customer-logo", "customer-logos",
     "trusted-by", "trustedby", "press-logo", "press-logos", "brand-logo", "brand-logos",
+    # Some CMSes name the asset with "logo" first, the audience second (e.g.
+    # Appian's AEM exports "logo-customer-pwc.svg", "logo-customer-aon.svg") —
+    # the word-order-reversed counterpart of "customer-logo" above.
+    "logo-customer", "logo-client", "logo-partner",
 }
 
 # Section headings that introduce rows of OTHER companies' logos, regardless of
@@ -640,6 +907,16 @@ _THIRD_PARTY_CONTEXT_KEYWORDS = (
     "featured in", "as seen in", "backed by", "integration partners",
     "customer logos", "client logos", "partner logos", "press logos", "in the news",
     "what our customers", "loved by", "used by teams at",
+)
+
+# Analyst-firm and review-site names that show up in "award badge" images
+# (e.g. "gartner-blue.png", "forrester-black.png", "idc-blue.png") — these
+# are always someone else's logo, regardless of whether "logo" itself
+# appears anywhere in the URL/alt text.
+_THIRD_PARTY_BRAND_KEYWORDS = (
+    "gartner", "forrester", "idc", "g2crowd", "g2-crowd", "capterra", "trustradius",
+    "peerspot", "softwarereviews", "everest-group", "everestgroup", "nucleus-research",
+    "kuppingercole", "getapp", "softwareadvice",
 )
 
 
@@ -660,9 +937,122 @@ def _classify_image(url: str, alt: str, context: str, company: str) -> str:
         return "logo"
     if any(kw in context.lower() for kw in _THIRD_PARTY_CONTEXT_KEYWORDS):
         return "logo"
+    if any(kw in text for kw in _THIRD_PARTY_BRAND_KEYWORDS):
+        return "logo"
     if "logo" in text and company.lower() not in text:
         return "logo"
     return "image"
+
+
+def _reclassify_images(images: list[SourcedAsset], company: str) -> tuple[list[SourcedAsset], dict[str, str]]:
+    """Re-run `_classify_image`'s URL-based heuristics over an already-merged
+    images list, dropping/demoting anything that should never have counted
+    as a real "image" in the first place. `_merge_sourced` only adds new
+    entries — without this, an entry stored by an older, looser version of
+    `_classify_image` (e.g. a third-party "Gartner-Logo.png" customer-logo
+    image, predating today's unconditional "logo" in url check) would
+    persist in `images` forever. No alt/context text is available
+    retroactively, but the URL-substring checks alone already catch every
+    case seen in practice (filenames literally containing "logo")."""
+    kept: list[SourcedAsset] = []
+    icons: dict[str, str] = {}
+    for asset in images:
+        kind = _classify_image(asset.url, "", "", company)
+        if kind == "icon":
+            icons[asset.url] = "icon"
+        elif kind != "logo":
+            kept.append(asset)
+    return kept, icons
+
+
+_IMAGE_CATEGORIES = ("diagram", "screenshot", "photo", "illustration", "other")
+# Formats GPT-4o-mini's vision input genuinely can't read at all.
+_VISION_INCOMPATIBLE_EXTENSIONS = {"svg", "pdf", "ico", "bmp", "tiff", "avif"}
+_CATEGORIZE_BATCH_SIZE = 16  # keeps each vision call's prompt small/cheap
+
+
+def _is_vision_compatible(url: str) -> bool:
+    """Many image CDNs (Adobe Scene7, Next.js's image proxy, Kaltura
+    thumbnails, ...) serve raster images through extensionless URLs — the
+    real format lives in a query param or isn't exposed at all. Defaulting
+    to "compatible" unless the path explicitly names a format vision can't
+    read catches those, instead of a whitelist that excludes them outright."""
+    path = url.split("?", 1)[0].rsplit("/", 1)[-1]
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    return ext not in _VISION_INCOMPATIBLE_EXTENSIONS
+
+
+async def _categorize_images_batch(urls: list[str], openai: AsyncOpenAI) -> dict[str, str]:
+    """One vision call classifying every url in this batch. `detail: low` keeps
+    per-image cost roughly fixed (~85 tokens) regardless of resolution — plenty
+    for a coarse style call like this, not a content-reading one."""
+    content: list[dict] = [
+        {
+            "type": "text",
+            "text": (
+                "Each image below is a marketing image scraped from a company website, "
+                "labeled by index. Classify each one as exactly one of:\n"
+                f"{list(_IMAGE_CATEGORIES)}\n"
+                "- diagram: process flows, charts, infographics, architecture diagrams\n"
+                "- screenshot: a product/app/dashboard UI screenshot\n"
+                "- photo: real photography (people, offices, events, products)\n"
+                "- illustration: stylized/vector or 3D-rendered graphic art, not a screenshot or diagram\n"
+                "- other: anything that doesn't clearly fit the above\n"
+                'Return JSON: {"<index>": "<category>", ...} for every index given.'
+            ),
+        }
+    ]
+    for i, url in enumerate(urls):
+        content.append({"type": "text", "text": f"Index {i}"})
+        content.append({"type": "image_url", "image_url": {"url": url, "detail": "low"}})
+
+    response = await openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": content}],
+        response_format={"type": "json_object"},
+    )
+    raw = json.loads(response.choices[0].message.content)
+    return {
+        urls[int(i)]: v
+        for i, v in raw.items()
+        if i.isdigit() and int(i) < len(urls) and v in _IMAGE_CATEGORIES
+    }
+
+
+async def _categorize_with_retry(urls: list[str], openai: AsyncOpenAI) -> dict[str, str]:
+    """Classify `urls` in one vision call; on failure (e.g. one unreachable
+    image in the batch — OpenAI fails the *entire* call if it can't download
+    even one image_url), split the batch in half and retry each half
+    independently instead of losing every other image to one bad apple.
+    Bottoms out at single-image calls in the worst case."""
+    try:
+        return await _categorize_images_batch(urls, openai)
+    except Exception as exc:
+        if len(urls) == 1:
+            logger.warning("image_categorization_failed", url=urls[0], error=str(exc))
+            return {}
+        mid = len(urls) // 2
+        left, right = await asyncio.gather(
+            _categorize_with_retry(urls[:mid], openai),
+            _categorize_with_retry(urls[mid:], openai),
+        )
+        return {**left, **right}
+
+
+async def _categorize_images(images: list[SourcedAsset], openai: AsyncOpenAI) -> dict[str, str]:
+    """{url: category} for every image still missing one. Scoped to only the
+    uncategorized subset (not the full merged list) so a repeat run doesn't
+    re-pay for classifying the same hundreds of images every time — once an
+    image has a category it keeps it forever, same as logo/icon classification."""
+    candidates = [img.url for img in images if img.category is None and _is_vision_compatible(img.url)]
+    if not candidates:
+        return {}
+    batches = [candidates[i : i + _CATEGORIZE_BATCH_SIZE] for i in range(0, len(candidates), _CATEGORIZE_BATCH_SIZE)]
+    results = await asyncio.gather(*[_categorize_with_retry(b, openai) for b in batches])
+    merged: dict[str, str] = {}
+    for r in results:
+        merged.update(r)
+    return merged
 
 
 def _html_window_text(html: str, fragment: str, window: int = 300) -> str:
@@ -706,7 +1096,7 @@ def _extract_images(
     # sites use instead of plain <img>
     for page_url, markdown, html in pages:
         for m in re.finditer(r'!\[([^\]]*)\]\((https?://[^\)]+)\)', markdown):
-            alt, url = m.group(1), m.group(2)
+            alt, url = m.group(1), html_lib.unescape(m.group(2))
             start, end = max(0, m.start() - 150), min(len(markdown), m.end() + 150)
             _consider(url, page_url, alt, markdown[start:end])
         for tag in _candidate_asset_tags(html):
@@ -778,12 +1168,24 @@ def _merge_dict(existing: dict[str, Any] | None, new: dict[str, Any]) -> dict[st
 
 def _merge_sourced(existing: list[SourcedAsset] | None, new: list[SourcedAsset]) -> list[SourcedAsset]:
     """Merge by URL, de-duplicating on both sides; fills in a missing source_page
-    from a later duplicate if the first-seen entry didn't have one."""
+    or category from a later duplicate if the first-seen entry didn't have one.
+
+    Field-by-field merging (not whole-object replacement) matters here: a
+    freshly re-extracted entry never has a `category` yet (that's filled in
+    separately, after merging, only for images still missing one) — wholesale
+    replacement would silently throw away a category an older snapshot
+    already paid an LLM call to determine."""
     by_url: dict[str, SourcedAsset] = {}
     for asset in [*(existing or []), *new]:
         prev = by_url.get(asset.url)
-        if prev is None or (prev.source_page is None and asset.source_page):
+        if prev is None:
             by_url[asset.url] = asset
+            continue
+        by_url[asset.url] = SourcedAsset(
+            url=asset.url,
+            source_page=prev.source_page or asset.source_page,
+            category=prev.category or asset.category,
+        )
     return list(by_url.values())
 
 
@@ -858,39 +1260,58 @@ async def run(state: ResearchState) -> dict:
         ]
         merged_images = _merge_sourced(existing.images if existing else None, images or [])
         merged_videos = _merge_sourced(existing.videos if existing else None, videos)
+        # Re-check the full merged list against the (possibly newer/stricter)
+        # logo/icon heuristics — same reasoning as the merged_logos re-check
+        # above. _merge_sourced only adds new entries; without this, a
+        # third-party customer logo (e.g. "Gartner-Logo.png") stored by an
+        # older scrape — before "logo" in the URL was enough to exclude it —
+        # would persist in `images` forever.
+        merged_images, reclassified_icons = _reclassify_images(merged_images, company)
         # Re-validate the full merged lists so stale/404/broken entries from older snapshots are dropped too.
         # Anything smaller than 50x50px isn't a real image — demote it to icons instead.
         merged_images, demoted_icons = await _validate_images(merged_images)
+        # Vision-classify only images that don't have a category yet (new
+        # this run, or scraped before this feature existed) — see
+        # _categorize_images for why this is scoped, not run on everything.
+        new_categories = await _categorize_images(merged_images, openai)
+        if new_categories:
+            merged_images = [
+                img.model_copy(update={"category": new_categories.get(img.url, img.category)})
+                for img in merged_images
+            ]
         merged_videos = await _validate_videos(merged_videos)
         logger.info("images_found", domain=domain, count=len(merged_images))
         logger.info("videos_found", domain=domain, count=len(merged_videos))
         merged_icons = _merge_dict(existing.icons if existing else None, icons)
         merged_icons = _merge_dict(merged_icons, {a.url: "icon" for a in demoted_icons})
+        merged_icons = _merge_dict(merged_icons, reclassified_icons)
 
         existing_fonts = existing.fonts if existing else None
         merged_fonts = _merge_fonts(existing_fonts, fonts or []) or None
 
         # Colors are a fresh judgment call each run (frequency-ranked CSS +
         # an LLM picking "real brand colors" out of that list), not a
-        # discovered-once-keep-forever asset like images/logos. Merging them
-        # additively across runs let every off-base LLM pick from any past
-        # run accumulate forever, which is why "too many / wrong colors"
-        # (e.g. random blues for Celonis) kept growing over time. Replace
-        # with the latest extraction instead; only fall back to the stored
-        # snapshot if this run's scrape came back empty (e.g. a transient
-        # failure), so a bad run can't wipe out previously good data.
-        existing_colors = (existing.colors if existing else None) or {}
-        merged_primary = colors.get("primary") or existing_colors.get("primary", [])
-        merged_secondary = colors.get("secondary") or existing_colors.get("secondary", [])
-        primary_set = set(merged_primary)
-        merged_secondary = [c for c in merged_secondary if c not in primary_set]
+        # discovered-once-keep-forever asset like images/logos. Always
+        # replace with the latest extraction — including when it's smaller
+        # or empty. _extract_colors only returns successfully with a result
+        # (possibly empty lists, which is a legitimate "found nothing that
+        # qualifies", not a failure); an actual scrape failure raises and is
+        # caught by the outer try/except below, which never reaches this
+        # line at all, so old data is naturally preserved on real failures.
+        # A previous version used `colors.get(...) or existing...`, which
+        # treated a legitimately-empty/stricter new result as "transient
+        # failure" and silently kept stale colors forever (e.g. red/pink
+        # tones for Celonis that no longer exist anywhere in its CSS).
+        merged_primary = colors["primary"]
+        merged_secondary = colors["secondary"]
+        merged_semantic = colors["semantic"]
 
         visuals_data = VisualsData(
             company=company,
             url=f"https://{domain}",
             title=f"Visuals: {company}",
             logo=merged_logos,
-            colors={"primary": merged_primary, "secondary": merged_secondary},
+            colors={"primary": merged_primary, "secondary": merged_secondary, "semantic": merged_semantic},
             fonts=merged_fonts,
             images=merged_images if merged_images else None,
             videos=merged_videos,

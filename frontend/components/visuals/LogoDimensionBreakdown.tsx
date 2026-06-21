@@ -18,6 +18,7 @@ export function LogoDimensionBreakdown() {
       label="Logo Dimensions"
       sublabel="How tracked competitors' logos break down across type, color, shape style, and signal shape"
       dimensions={data.dimensions}
+      logoUrls={data.logoUrls}
     />
   );
 }
