@@ -16,6 +16,8 @@ GET /visuals/{domain}
 Requires a valid JWT via Authorization: Bearer <token>.
 """
 
+from typing import Any
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
@@ -70,6 +72,7 @@ class SourcedAssetOut(BaseModel):
 
     url: str
     source_page: str | None = None
+    category: str | None = None
 
 
 class VisualsItem(BaseModel):
@@ -79,7 +82,7 @@ class VisualsItem(BaseModel):
     url: str | None = None
     title: str | None = None
     logo: list[str] = []
-    colors: dict[str, list[str]] = {}
+    colors: dict[str, Any] = {}  # {"primary": [...], "secondary": [...], "semantic": {hex: label}}
     fonts: list[FontInfoOut] | None = None
     images: list[SourcedAssetOut] | None = None
     videos: list[SourcedAssetOut] = []

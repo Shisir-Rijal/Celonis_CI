@@ -8,6 +8,7 @@ import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 import { useLogoPlacement } from "@/lib/branding/hooks";
 import type { LogoPlacementEntry, LogoPlacementPosition } from "@/lib/branding/types";
 import { CompanyChip } from "./CompanyChip";
+import { CompanyLogoDropdown } from "./CompanyLogoDropdown";
 
 const GRID_LAYOUT: (LogoPlacementPosition | null)[] = [
   "top-left",
@@ -107,16 +108,19 @@ export function LogoPlacementGrid() {
         </div>
 
         {activeEntry && (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <span className="text-xs text-neutral-grey-20">
               {POSITION_LABELS[activeEntry.position]} — {activeEntry.pct}%
             </span>
             {activeEntry.companies.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {activeEntry.companies.map((c) => (
-                  <CompanyChip key={c} company={c} />
-                ))}
-              </div>
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeEntry.companies.map((c) => (
+                    <CompanyChip key={c} company={c} />
+                  ))}
+                </div>
+                <CompanyLogoDropdown companies={activeEntry.companies} logoUrls={data.logoUrls} />
+              </>
             ) : (
               <span className="text-[11px] text-neutral-grey-20">No tracked competitor favors this spot.</span>
             )}
@@ -124,16 +128,19 @@ export function LogoPlacementGrid() {
         )}
 
         {notPresent && (
-          <div className="flex items-center gap-3 pt-3 border-t border-white/8">
-            <EyeOff size={14} className="text-neutral-grey-20 shrink-0" />
-            <span className="text-xs text-neutral-grey-20 shrink-0">
-              Logo missing entirely on {notPresent.pct}% of analyzed imagery
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {notPresent.companies.map((c) => (
-                <CompanyChip key={c} company={c} />
-              ))}
+          <div className="flex flex-col gap-2 pt-3 border-t border-white/8">
+            <div className="flex items-center gap-3">
+              <EyeOff size={14} className="text-neutral-grey-20 shrink-0" />
+              <span className="text-xs text-neutral-grey-20 shrink-0">
+                Logo missing entirely on {notPresent.pct}% of analyzed imagery
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {notPresent.companies.map((c) => (
+                  <CompanyChip key={c} company={c} />
+                ))}
+              </div>
             </div>
+            <CompanyLogoDropdown companies={notPresent.companies} logoUrls={data.logoUrls} />
           </div>
         )}
       </div>

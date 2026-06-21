@@ -10,9 +10,13 @@ export type FontInfo = {
   sizes: string[] | null;
 };
 
+export type ImageCategory = "diagram" | "screenshot" | "photo" | "illustration" | "other";
+
 export type SourcedAsset = {
   url: string;
   source_page: string | null;
+  /** images only — null for videos, or for images scraped before this field existed */
+  category: ImageCategory | null;
 };
 
 export type VisualsItem = {
@@ -20,7 +24,8 @@ export type VisualsItem = {
   url: string | null;
   title: string | null;
   logo: string[];
-  colors: { primary?: string[]; secondary?: string[] };
+  /** semantic: hex -> what it's for, e.g. "success" | "error" | "warning" | "info" | "disabled" */
+  colors: { primary?: string[]; secondary?: string[]; semantic?: Record<string, string> };
   fonts: FontInfo[] | null;
   images: SourcedAsset[] | null;
   videos: SourcedAsset[];

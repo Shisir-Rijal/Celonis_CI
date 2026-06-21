@@ -5,6 +5,7 @@ import { useState } from "react";
 import DashboardCard from "@components/geo/DashboardCard";
 import type { DimensionCategory } from "@/lib/branding/types";
 import { CompanyChip } from "./CompanyChip";
+import { CompanyLogoDropdown } from "./CompanyLogoDropdown";
 
 type Dimension = {
   key: string;
@@ -12,7 +13,16 @@ type Dimension = {
   categories: DimensionCategory[];
 };
 
-function CategoryBar({ category, max }: { category: DimensionCategory; max: number }) {
+function CategoryBar({
+  category,
+  max,
+  logoUrls,
+}: {
+  category: DimensionCategory;
+  max: number;
+  /** Only passed by logo dimensions — lets each bucket preview the actual logo behind a company. */
+  logoUrls?: Record<string, string>;
+}) {
   const width = max > 0 ? (category.pct / max) * 100 : 0;
   return (
     <div className="flex flex-col gap-1.5 py-2.5 border-b border-white/8 last:border-b-0">
@@ -24,10 +34,13 @@ function CategoryBar({ category, max }: { category: DimensionCategory; max: numb
         <span className="text-[11px] text-neutral-grey-20 w-9 text-right shrink-0">{category.pct}%</span>
       </div>
       {category.companies.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pl-1">
-          {category.companies.map((c) => (
-            <CompanyChip key={c} company={c} />
-          ))}
+        <div className="flex flex-col gap-2 pl-1">
+          <div className="flex flex-wrap gap-1.5">
+            {category.companies.map((c) => (
+              <CompanyChip key={c} company={c} />
+            ))}
+          </div>
+          {logoUrls && <CompanyLogoDropdown companies={category.companies} logoUrls={logoUrls} />}
         </div>
       )}
     </div>
@@ -44,10 +57,13 @@ export function DimensionBreakdownPanel({
   label,
   sublabel,
   dimensions,
+  logoUrls,
 }: {
   label: string;
   sublabel: string;
   dimensions: Dimension[];
+  /** Only passed by logo dimensions — lets each bucket preview the actual logo behind a company. */
+  logoUrls?: Record<string, string>;
 }) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const active = dimensions.find((d) => d.key === activeKey) ?? dimensions[0];
@@ -74,7 +90,7 @@ export function DimensionBreakdownPanel({
         </div>
         <div className="flex flex-col">
           {active.categories.map((category) => (
-            <CategoryBar key={category.category} category={category} max={max} />
+            <CategoryBar key={category.category} category={category} max={max} logoUrls={logoUrls} />
           ))}
         </div>
       </div>

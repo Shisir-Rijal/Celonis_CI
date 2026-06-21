@@ -1,6 +1,6 @@
 "use client";
 
-import { Palette, Type, Aperture, Image as ImageIcon, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { Palette, Type, Aperture, Image as ImageIcon, Video, ArrowUp, ArrowDown, Minus } from "lucide-react";
 
 import DashboardCard from "@components/geo/DashboardCard";
 import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
@@ -12,6 +12,7 @@ const ELEMENT_ICONS: Record<VisualElementTrend["element"], React.ReactNode> = {
   Font: <Type size={16} />,
   Logo: <Aperture size={16} />,
   Imagery: <ImageIcon size={16} />,
+  Video: <Video size={16} />,
 };
 
 const DIRECTION_STYLE: Record<TrendDirection, { icon: React.ReactNode; label: string; className: string }> = {

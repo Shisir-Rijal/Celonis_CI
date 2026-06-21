@@ -1,11 +1,33 @@
 /**
- * Types for the (not-yet-built) branding agent's color-interpretation output.
+ * Types for the branding agent's interpretation output.
  *
- * These mirror the response shape the future `/branding/color-insights`
- * endpoint should return. Until that endpoint exists, `hooks.ts` resolves
- * `DUMMY_COLOR_INSIGHTS` instead — swap the hook's queryFn for a real
- * `apiFetch` call and every component below keeps working unchanged.
+ * Mirror the response shapes returned by the `/branding/*` endpoints
+ * (backend/app/api/visualbranding.py adapts the agent's Pydantic models into
+ * these exact shapes).
  */
+
+// ---------------------------------------------------------------------------
+// Brand archetypes — holistic cross-dimension synthesis (one per company or
+// company group, not gated to a single visual dimension)
+// ---------------------------------------------------------------------------
+
+export type BrandArchetype = {
+  name: string;
+  /** Short single-word vibe descriptors, e.g. ["Bold", "Technical", "Disruptive"]. */
+  keywords: string[];
+  vibe: string;
+  typography: string;
+  coloring: string;
+  /** Representative image URL, or null if nothing scraped yet for this archetype. */
+  image: string | null;
+  /** Can be a single company — not every archetype needs 2+ members. */
+  companies: string[];
+};
+
+export type BrandArchetypes = {
+  archetypes: BrandArchetype[];
+  generatedAt: string | null;
+};
 
 /**
  * Generic four-bucket usage scale. Used for the color spectrum today;
@@ -78,9 +100,39 @@ export type SimilarFontGroup = {
   note: string | null;
 };
 
+export type FontArchetype = {
+  name: string;
+  description: string;
+  sampleFontName: string;
+  companies: string[];
+};
+
+export type FontDimensionKey = "classification" | "weight_emphasis" | "personality";
+
+export type FontDimension = {
+  key: FontDimensionKey;
+  label: string;
+  categories: DimensionCategory[];
+};
+
 export type FontInsights = {
   similarFonts: SimilarFontGroup[];
+  archetypes: FontArchetype[];
+  dimensions: FontDimension[];
   generatedAt: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Cross-dimension change alerts — what changed since each node's last run
+// ---------------------------------------------------------------------------
+
+export type BrandingAlerts = {
+  color: string[] | null;
+  font: string[] | null;
+  logo: string[] | null;
+  image: string[] | null;
+  video: string[] | null;
+  trend: string[] | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -90,7 +142,7 @@ export type FontInsights = {
 export type TrendDirection = "up" | "down" | "flat";
 
 export type VisualElementTrend = {
-  element: "Color" | "Font" | "Logo" | "Imagery";
+  element: "Color" | "Font" | "Logo" | "Imagery" | "Video";
   direction: TrendDirection;
   /** Short agent-generated note on where this element is trending and why. */
   summary: string;
@@ -182,6 +234,8 @@ export type LogoDimension = {
 
 export type LogoDimensionBreakdown = {
   dimensions: LogoDimension[];
+  /** {company: logo image URL} — lets the UI show the actual logo behind any company name. */
+  logoUrls: Record<string, string>;
   generatedAt: string | null;
 };
 
@@ -207,5 +261,40 @@ export type LogoPlacementEntry = {
 
 export type LogoPlacement = {
   positions: LogoPlacementEntry[];
+  /** {company: logo image URL} — lets the UI show the actual logo behind any company name. */
+  logoUrls: Record<string, string>;
+  generatedAt: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Video — format / effect / length / presence + named archetypes + usage
+// ---------------------------------------------------------------------------
+
+export type VideoArchetype = {
+  name: string;
+  description: string;
+  /** Representative thumbnail (or video URL) illustrating this style cluster. */
+  thumbnail: string;
+  companies: string[];
+};
+
+export type VideoDimensionKey = "format" | "effect" | "length" | "presence";
+
+export type VideoDimension = {
+  key: VideoDimensionKey;
+  label: string;
+  categories: DimensionCategory[];
+};
+
+export type VideoUsageEntry = {
+  company: string;
+  count: number;
+  avgDurationSeconds: number | null;
+};
+
+export type VideoInsights = {
+  archetypes: VideoArchetype[];
+  dimensions: VideoDimension[];
+  usage: VideoUsageEntry[];
   generatedAt: string | null;
 };

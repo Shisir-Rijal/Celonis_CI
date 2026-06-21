@@ -1,12 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ExternalLink, Play } from "lucide-react";
+import { ChevronDown, ExternalLink, Play } from "lucide-react";
 
 import DashboardCard from "@components/geo/DashboardCard";
-import type { VisualsItem } from "@/lib/visuals/types";
+import type { ImageCategory, VisualsItem } from "@/lib/visuals/types";
 import { useGoogleFonts, cleanFontName } from "@/lib/visuals/useGoogleFonts";
 import type { GalleryItem } from "./Lightbox";
+
+const IMAGE_CATEGORY_LABELS: Record<ImageCategory, string> = {
+  diagram: "Diagrams",
+  screenshot: "Screenshots",
+  photo: "Photos",
+  illustration: "Illustrations",
+  other: "Other",
+};
+const IMAGE_CATEGORY_ORDER: ImageCategory[] = ["screenshot", "diagram", "photo", "illustration", "other"];
 
 export const ELEMENT_OPTIONS = [
   { value: "colors", label: "Colors" },
@@ -75,6 +84,8 @@ export function CompetitorBrandingCard({
 
   const primary = [...new Set(item.colors?.primary ?? [])];
   const secondary = [...new Set(item.colors?.secondary ?? [])].filter((c) => !primary.includes(c));
+  const semanticEntries = Object.entries(item.colors?.semantic ?? {});
+  const [showSemantic, setShowSemantic] = useState(false);
   const fonts = item.fonts ?? [];
   const images = item.images ?? [];
   const iconEntries = Object.entries(item.icons ?? {});
@@ -90,6 +101,15 @@ export function CompetitorBrandingCard({
   const visibleImages = images.filter((img) => !brokenUrls.has(img.url));
   const visibleIconEntries = iconEntries.filter(([src]) => !brokenUrls.has(src));
   const visibleIconUrls = visibleIconEntries.map(([url]) => url);
+
+  const [imageCategoryFilter, setImageCategoryFilter] = useState<ImageCategory | "all">("all");
+  const presentImageCategories = IMAGE_CATEGORY_ORDER.filter((cat) =>
+    visibleImages.some((img) => img.category === cat)
+  );
+  const filteredImages =
+    imageCategoryFilter === "all"
+      ? visibleImages
+      : visibleImages.filter((img) => img.category === imageCategoryFilter);
 
   const fontNames = useMemo(() => fonts.map((f) => cleanFontName(f.name)), [fonts]);
   useGoogleFonts(fontNames);
@@ -114,7 +134,7 @@ export function CompetitorBrandingCard({
         )}
       </div>
 
-      {showColors && (primary.length > 0 || secondary.length > 0) && (
+      {showColors && (primary.length > 0 || secondary.length > 0 || semanticEntries.length > 0) && (
         <div className="flex flex-col gap-3">
           <span className="text-[11px] text-neutral-grey-20 uppercase tracking-widest">
             Colors
@@ -137,6 +157,32 @@ export function CompetitorBrandingCard({
                   <ColorSwatch key={c} hex={c} />
                 ))}
               </div>
+            </div>
+          )}
+          {semanticEntries.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowSemantic((v) => !v)}
+                aria-expanded={showSemantic}
+                className="flex items-center gap-1 text-[10px] text-neutral-grey-20 hover:text-primary-white transition-colors cursor-pointer w-fit"
+              >
+                <ChevronDown
+                  size={12}
+                  className={`transition-transform ${showSemantic ? "" : "-rotate-90"}`}
+                />
+                Semantic colors ({semanticEntries.length})
+              </button>
+              {showSemantic && (
+                <div className="flex flex-wrap gap-3 pl-1">
+                  {semanticEntries.map(([hex, label]) => (
+                    <span key={hex} className="flex items-center gap-1.5">
+                      <ColorSwatch hex={hex} />
+                      <span className="text-[10px] text-neutral-grey-20 capitalize">{label}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -219,16 +265,45 @@ export function CompetitorBrandingCard({
             <span className="text-[11px] text-neutral-grey-20 uppercase tracking-widest">
               Images
             </span>
-            <span className="text-[10px] text-neutral-grey-20">{images.length}</span>
+            <span className="text-[10px] text-neutral-grey-20">{filteredImages.length}</span>
           </div>
+          {presentImageCategories.length > 1 && (
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => setImageCategoryFilter("all")}
+                className={`text-[10px] px-2 py-0.5 rounded-full transition-colors cursor-pointer ${
+                  imageCategoryFilter === "all"
+                    ? "bg-secondary-green text-primary-black font-medium"
+                    : "bg-white/5 border border-white/10 text-neutral-grey-20 hover:text-primary-white"
+                }`}
+              >
+                All
+              </button>
+              {presentImageCategories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setImageCategoryFilter(cat)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full transition-colors cursor-pointer ${
+                    imageCategoryFilter === cat
+                      ? "bg-secondary-green text-primary-black font-medium"
+                      : "bg-white/5 border border-white/10 text-neutral-grey-20 hover:text-primary-white"
+                  }`}
+                >
+                  {IMAGE_CATEGORY_LABELS[cat]}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-4 gap-1.5">
-            {visibleImages.slice(0, 4).map((img, i) => (
+            {filteredImages.slice(0, 4).map((img, i) => (
               <button
                 key={img.url}
                 type="button"
                 onClick={() =>
                   onOpenGallery(
-                    visibleImages.map((im) => ({ url: im.url, source: im.source_page })),
+                    filteredImages.map((im) => ({ url: im.url, source: im.source_page })),
                     i,
                     `${item.company} image`,
                     "white"
