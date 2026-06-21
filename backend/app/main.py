@@ -66,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(visuals.visuals_router)
     app.include_router(visualbranding.router)
     app.include_router(event.router)
+    app.include_router(news.router)
 
     # --- Root info endpoint ---
     @app.get("/", tags=["meta"])
