@@ -19,6 +19,7 @@ from app.agents.research.repositories.research_repository import insert_research
 import structlog
 from app.config import get_settings
 from app.agents.shared.utils.brandfetch import _get_brand_data
+from app.agents.shared.competitors import get_competitor_names
 
 
 
@@ -341,6 +342,46 @@ def _looks_like_own_logo(url: str, company: str) -> bool:
     return _company_name_in_path(url, company.lower())
 
 
+_RASTER_LOGO_EXTENSIONS = ("png", "webp", "jpg", "jpeg")
+
+
+_LOGO_DIMENSION_SEGMENT_RE = re.compile(r"/w/\d+/h/\d+")
+
+
+def _logo_asset_key(url: str) -> str:
+    """Identity for "the same logo artwork, any file format" — query string,
+    extension, AND any `/w/<width>/h/<height>/` sizing segment stripped.
+    Brandfetch inserts that sizing segment only for raster formats (vector
+    SVGs don't need one), so e.g. ".../theme/dark/logo.svg" and
+    ".../w/800/h/319/theme/dark/logo.png" must both reduce to
+    ".../theme/dark/logo" to be recognized as the same artwork."""
+    path = _LOGO_DIMENSION_SEGMENT_RE.sub("", url.split("?", 1)[0])
+    return path.rsplit(".", 1)[0] if "." in path.rsplit("/", 1)[-1] else path
+
+
+def _dedupe_logo_formats(urls: list[str]) -> list[str]:
+    """One URL per distinct logo artwork, preferring a raster format over
+    SVG. Brandfetch's SVG logos have proven unreliable to render here: some
+    ship with no fill at all (defaulting to black per the SVG spec), others
+    bake in a fixed light/dark color that goes invisible against whichever
+    UI surface doesn't match — a raster format always renders its own
+    pixels regardless of background, so it wins whenever both exist for the
+    same artwork. Order-preserving and safe to re-run on an already-merged
+    list (e.g. to retroactively drop an SVG twin a previous run stored)."""
+    by_asset: dict[str, str] = {}
+    for url in urls:
+        key = _logo_asset_key(url)
+        ext = url.split("?", 1)[0].rsplit(".", 1)[-1].lower()
+        current = by_asset.get(key)
+        if current is None:
+            by_asset[key] = url
+            continue
+        current_ext = current.split("?", 1)[0].rsplit(".", 1)[-1].lower()
+        if current_ext not in _RASTER_LOGO_EXTENSIONS and ext in _RASTER_LOGO_EXTENSIONS:
+            by_asset[key] = url
+    return list(by_asset.values())
+
+
 def _extract_logos(data: dict, pages: list[tuple[str, str, str]], company: str) -> list[str]:
     # Brandfetch zuerst
     seen: set[str] = set()
@@ -352,7 +393,7 @@ def _extract_logos(data: dict, pages: list[tuple[str, str, str]], company: str) 
                 seen.add(src)
                 urls.append(src)
     if urls:
-        return urls
+        return _dedupe_logo_formats(urls)
 
     # Fallback: scan rawHtml (not just markdown, which often strips header/nav
     # chrome out as "boilerplate") for img-like tags. The site's own logo
@@ -433,12 +474,26 @@ def _normalize_hex(raw: str) -> str:
     return f"#{raw.upper()}"
 
 
-def _is_grayscale(hex_code: str, threshold: int = 12) -> bool:
-    """True for near-black/white/grey colors (low channel spread) — these
-    are almost never the "brand color" a designer picked on purpose."""
-    h = hex_code.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return max(r, g, b) - min(r, g, b) <= threshold
+def _saturation(hex_color: str) -> int:
+    """Rough saturation proxy (0-255): max channel - min channel. Higher
+    means more vivid/colorful; near 0 means grayscale."""
+    h = hex_color.lstrip("#").strip()
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        return 0
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return 0
+    return max(r, g, b) - min(r, g, b)
+
+
+def _is_grayscale(hex_color: str) -> bool:
+    """True for black/white/grey — R, G, B channels all close to equal.
+    Catches near-black/near-white tones (e.g. "#161616", "#F4F4F4"), not
+    just exact "#000000"/"#FFFFFF"."""
+    return _saturation(hex_color) <= 12
 
 
 # Design-token systems name their status/utility colors after what they
@@ -478,6 +533,16 @@ _FRAMEWORK_DEFAULT_COLORS = {
     "#00D084", "#8ED1FC", "#0693E3", "#9B51E0",
 }
 
+# The browser's own built-in default link colors (UA stylesheet / legacy
+# HTML spec) — show up incidentally wherever a reset/normalize stylesheet
+# or un-styled <a> still carries one of these, never a deliberate brand
+# choice. Worth excluding specifically (unlike other incidental colors)
+# because they're maximally saturated, so the saturation-weighted primary
+# pick below would otherwise favor one of these over a less-saturated but
+# genuinely deliberate accent color (e.g. Anthropic's actual orange #D97757
+# losing to the default link blue #0000EE purely on vividness).
+_BROWSER_DEFAULT_LINK_COLORS = {"#0000EE", "#0000FF", "#551A8B"}
+
 # A color used in only one CSS rule block reads as a one-off illustration/
 # icon fill, not a deliberate brand choice — never worth storing.
 _MIN_COLOR_USAGE_COUNT = 2
@@ -509,8 +574,6 @@ def _extract_semantic_colors(css_text: str) -> dict[str, str]:
     semantic: dict[str, str] = {}
     for match in _HEX_COLOR_RE.finditer(css_text):
         hex_code = _normalize_hex(match.group(1))
-        if _is_grayscale(hex_code) or hex_code in semantic:
-            continue
         property_name = _css_property_name_at(css_text, match.start())
         for keyword, label in _SEMANTIC_KEYWORD_LABELS:
             if keyword in property_name:
@@ -522,83 +585,210 @@ def _extract_semantic_colors(css_text: str) -> dict[str, str]:
 # Property names that carry a color but aren't "the section's background" or
 # "the text's font color" — these would otherwise slip through a naive
 # "-color" suffix check and pollute the secondary-color pool with decorative
-# accents that were never the actual ask.
+# accents that were never the actual ask. NOT "accent" as a bare substring:
+# design-token systems name their actual brand/accent colors things like
+# "--fnd-color-background-accent-green", which legitimately is a background
+# color — only the literal CSS `accent-color` property (the decorative ring
+# around checkboxes/radios) should be excluded, handled separately below.
 _DECORATIVE_COLOR_PROPERTY_HINTS = (
-    "border", "outline", "shadow", "decoration", "caret", "accent",
+    "border", "outline", "shadow", "decoration", "caret",
     "fill", "stroke", "placeholder", "scrollbar", "ring",
 )
 
 
 def _is_section_or_text_color_property(property_name: str) -> bool:
+    if property_name == "accent-color" or property_name.endswith("-accent-color"):
+        return False
     if any(hint in property_name for hint in _DECORATIVE_COLOR_PROPERTY_HINTS):
         return False
     return "background" in property_name or property_name == "color" or property_name.endswith("-color")
 
 
-def _rank_section_colors(css_text: str, top_n: int = 40) -> list[tuple[str, int]]:
+_RGB_FUNC_RE = re.compile(r'rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)', re.IGNORECASE)
+_RGB_TRIPLET_RE = re.compile(r'^\s*([\d.]+)\s*[,\s]\s*([\d.]+)\s*[,\s]\s*([\d.]+)\s*$')
+
+
+def _channels_to_hex(r: str, g: str, b: str) -> str | None:
+    try:
+        ri, gi, bi = round(float(r)), round(float(g)), round(float(b))
+    except ValueError:
+        return None
+    if not all(0 <= x <= 255 for x in (ri, gi, bi)):
+        return None
+    return f"#{ri:02X}{gi:02X}{bi:02X}"
+
+
+_CUSTOM_PROPERTY_RE = re.compile(r'(--[\w-]+)\s*:\s*([^;]+);')
+_VAR_REF_RE = re.compile(r'var\(\s*(--[\w-]+)')
+
+
+def _build_custom_property_map(css_text: str) -> dict[str, str]:
+    """{--design-token-name: hex} for every color-valued CSS custom property
+    declared anywhere in the stylesheet — as a literal hex (`--foo: #hex`),
+    an rgb()/rgba() function (`--foo: rgb(1,2,3)`), or a bare R, G, B channel
+    triplet (`--foo-rgb: 1, 2, 3`, used elsewhere as `rgba(var(--foo-rgb),.5)`
+    — a common Tailwind-style opacity-aware color pattern). Design-token
+    systems (like Celonis's, IBM's, OpenAI's, ...) define their real brand
+    colors once like this and reference them everywhere else via var(...) —
+    without resolving these, a declaration like
+    `background-color:var(--fnd-color-background-inverse)` looks colorless
+    to a regex scan that only matches literal hex codes."""
+    props: dict[str, str] = {}
+    for name, raw_value in _CUSTOM_PROPERTY_RE.findall(css_text):
+        value = raw_value.strip()
+        hex_match = _HEX_COLOR_RE.search(value)
+        if hex_match:
+            props[name] = _normalize_hex(hex_match.group(1))
+            continue
+        rgb_match = _RGB_FUNC_RE.search(value) or _RGB_TRIPLET_RE.match(value)
+        if rgb_match:
+            hex_code = _channels_to_hex(*rgb_match.groups())
+            if hex_code:
+                props[name] = hex_code
+    return props
+
+
+def _resolve_block_colors(block: str, custom_props: dict[str, str]) -> set[str]:
+    """Hex colors actually painted as a background/text color within one CSS
+    rule block — resolving var(--token) references (via custom_props,
+    chained up to 3 levels deep) and rgb()/rgba() function values, not just
+    literal hex codes. Design-token systems declare their real colors once
+    via custom properties and apply them everywhere through var(...); a scan
+    that only matched literal "#RRGGBB" text in the block itself missed the
+    overwhelming majority of a modern site's actual color usage (e.g.
+    OpenAI's CSS has 900+ literal hex codes but barely any on a
+    background/text property directly — almost everything goes through a
+    custom property)."""
+
+    def _resolve_var(token: str, depth: int = 3) -> str | None:
+        value = custom_props.get(token)
+        for _ in range(depth):
+            if value is None:
+                return None
+            chain_match = _VAR_REF_RE.match(value.strip())
+            if not chain_match:
+                return value
+            value = custom_props.get(chain_match.group(1))
+        return None
+
+    found: set[str] = set()
+    for decl in re.finditer(r'([\w-]+)\s*:\s*([^;{}]+)', block):
+        prop, value = decl.group(1).strip().lower(), decl.group(2)
+        if not _is_section_or_text_color_property(prop):
+            continue
+        hex_match = _HEX_COLOR_RE.search(value)
+        if hex_match:
+            found.add(_normalize_hex(hex_match.group(1)))
+            continue
+        rgb_match = _RGB_FUNC_RE.search(value)
+        if rgb_match:
+            hex_code = _channels_to_hex(*rgb_match.groups())
+            if hex_code:
+                found.add(hex_code)
+            continue
+        var_match = _VAR_REF_RE.search(value)
+        if var_match:
+            resolved = _resolve_var(var_match.group(1))
+            if resolved:
+                found.add(resolved)
+    return found
+
+
+def _rank_section_colors(
+    css_text: str, custom_props: dict[str, str], top_n: int = 40
+) -> list[tuple[str, int]]:
     """Hex colors declared specifically as a `background`/`background-color`
     (a section's own background) or a `color`/`*-color` font/text color —
     never border/outline/shadow/etc — ranked by how many separate rule
-    blocks use them this way. Secondary brand colors should be colors
-    actually painted onto the page as a section background or text color,
-    not just any hex that happens to appear somewhere in the CSS.
+    blocks use them this way (resolving var(--token)/rgb() values via
+    _resolve_block_colors). Secondary brand colors should be colors actually
+    painted onto the page as a section background or text color, not just
+    any hex that happens to appear somewhere in the CSS.
 
-    Unlike _rank_css_colors (the primary fallback), grayscale is NOT
-    excluded here — a genuinely deliberate neutral grey (e.g. a muted
-    secondary-text or card-background grey) is a real, common secondary
-    color choice, and this pool is already scoped tightly enough (only
-    actual background/text-color declarations) that it isn't drowned in
-    the same way the broad "any usage" primary pool was. The LLM step that
-    picks the final secondary colors is relied on to still tell a plain
+    Grayscale is NOT excluded here — a genuinely deliberate neutral grey
+    (e.g. a muted secondary-text or card-background grey) is a real, common
+    secondary color choice. When Brandfetch has primary data, the LLM step
+    that picks the final secondary colors is relied on to still tell a plain
     white-page-background or black-body-text default apart from an
-    intentional grey accent."""
+    intentional grey accent; in the no-Brandfetch fallback (_extract_colors),
+    this same pool also supplies primary candidates, where button-color
+    promotion (_pick_fallback_primary) does the equivalent job of telling a
+    deliberate black/white brand identity apart from incidental usage."""
     counts: dict[str, int] = {}
     for block_match in re.finditer(r'\{([^{}]*)\}', css_text):
-        block, block_start = block_match.group(1), block_match.start(1)
-        seen_in_block: set[str] = set()
-        for m in _HEX_COLOR_RE.finditer(block):
-            hex_code = _normalize_hex(m.group(1))
-            if _is_section_or_text_color_property(_css_property_name_at(css_text, block_start + m.start())):
-                seen_in_block.add(hex_code)
-        for hex_code in seen_in_block:
+        for hex_code in _resolve_block_colors(block_match.group(1), custom_props):
             counts[hex_code] = counts.get(hex_code, 0) + 1
     return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
 
 
-def _rank_css_colors(css_text: str, top_n: int = 25) -> list[tuple[str, int]]:
-    """Distinct chromatic (non-grayscale) hex colors in `css_text`, ranked by
-    how many separate CSS rule blocks use them. Frequency is a simple but
-    effective proxy for "this is an actual brand/accent color" vs. a one-off
-    illustration color — and it's why a heavily-used color like a brand
-    purple won't get lost.
+# Selectors that mark a rule block as styling an actual clickable
+# button/CTA — a button's own background is the single strongest "this is
+# our primary brand color" signal a website gives off, stronger than mere
+# section-background frequency.
+_BUTTON_SELECTOR_RE = re.compile(
+    r'(?:^|[\s,>+~.])(?:button|\.btn\b|\.button\b|\.cta\b|'
+    r'\[type=["\']?(?:submit|button)["\']?\]|input\[type=["\']?(?:submit|button)["\']?\])',
+    re.IGNORECASE,
+)
 
-    Grayscale stays excluded even here (the CSS-frequency fallback path):
-    virtually every website uses black text and a white/near-white
-    background somewhere, so frequency alone can't tell a deliberately
-    black/white *brand* color apart from that universal baseline — letting
-    grayscale through here let black/white win by sheer frequency over a
-    company's actual signature color (e.g. Celonis's green) on every site
-    tested. A genuinely black/white primary is instead expected to come
-    from Brandfetch (see _brandfetch_primary_colors), which doesn't have
-    this frequency-confusion problem.
 
-    Counted per rule block (not per raw literal occurrence): design-token
-    systems often declare dozens of named custom properties
-    (--fnd-color-text-low, --fnd-color-border-state-disabled, ...) inside a
-    single block, reusing the same rarely-applied color many times over —
-    that inflated unused tokens (e.g. a disabled-state blue) above real,
-    widely-applied brand colors when counted literally."""
+def _rank_button_colors(
+    css_text: str, custom_props: dict[str, str], top_n: int = 10
+) -> list[tuple[str, int]]:
+    """Background/text colors declared on button-like selectors (button,
+    .btn, .button, .cta, [type=submit], ...), ranked by how many separate
+    rule blocks use them this way — resolving var(--token)/rgb() values via
+    _resolve_block_colors, not just literal hex codes, since design-token
+    systems style buttons through CSS variables almost exclusively."""
     counts: dict[str, int] = {}
-    blocks = re.findall(r'\{([^{}]*)\}', css_text) or [css_text]
-    for block in blocks:
-        seen_in_block: set[str] = set()
-        for match in _HEX_COLOR_RE.findall(block):
-            hex_code = _normalize_hex(match)
-            if not _is_grayscale(hex_code):
-                seen_in_block.add(hex_code)
-        for hex_code in seen_in_block:
+    for block_match in re.finditer(r'([^{}]+)\{([^{}]*)\}', css_text):
+        selector, block = block_match.group(1), block_match.group(2)
+        if not _BUTTON_SELECTOR_RE.search(selector):
+            continue
+        for hex_code in _resolve_block_colors(block, custom_props):
             counts[hex_code] = counts.get(hex_code, 0) + 1
     return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
+
+
+def _pick_fallback_primary(
+    candidates: list[tuple[str, int]], button_colors: list[tuple[str, int]], limit: int = 3
+) -> list[str]:
+    """Top `limit` colors by combined section/text frequency + button-usage
+    count — with the single best chromatic (non grey/white/black) candidate
+    guaranteed one slot if any exists. A button's own color is a strong
+    "this is our primary brand color" signal, so it's added as a boost on
+    top of the regular frequency score — not used to override frequency
+    outright, which would let a rarely-used secondary/link button color
+    crowd out the actual palette (e.g. a one-off blue "Sign up" link button
+    outranking the brand's actual green just for appearing in its own single
+    rule block).
+
+    The chromatic guarantee exists because plain frequency alone
+    systematically buries a brand's actual accent color: base text/section
+    styling (black, white, grey) is painted on far more rule blocks
+    site-wide than any one accent ever is, so without this, sites with a
+    minimal black/white aesthetic plus a signature accent color (Anthropic's
+    orange, ARIS's red/green, SAP Signavio's blue) would always end up with
+    an all-grayscale primary despite a real accent existing in the data.
+    That guaranteed slot goes to the candidate maximizing usage x
+    saturation, not just usage alone — picking by usage alone tends to
+    surface a merely-frequent dark/muted near-grayscale tone (e.g. a dark
+    navy footer background) over a less-frequent but unmistakably "the
+    brand color" vivid hue (e.g. SAP Signavio's saturated blue #0070F2).
+    Grayscale isn't excluded from `candidates` itself, so a genuinely
+    black/white-only brand identity (no chromatic candidate at all) still
+    fills every slot, just like it would via Brandfetch."""
+    scores: dict[str, int] = dict(candidates)
+    for hex_code, count in button_colors:
+        scores[hex_code] = scores.get(hex_code, 0) + count
+    ranked = [h for h, _ in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)]
+
+    chromatic_candidates = [h for h in ranked if not _is_grayscale(h)]
+    if not chromatic_candidates:
+        return ranked[:limit]
+    chromatic = max(chromatic_candidates, key=lambda h: scores[h] * _saturation(h))
+    rest = [h for h in ranked if h != chromatic][: limit - 1]
+    return [chromatic, *rest]
 
 
 def _base_domain(hostname: str) -> str:
@@ -683,14 +873,20 @@ def _brandfetch_primary_colors(data: dict, limit: int = 3) -> list[str]:
 async def _extract_colors(
     data: dict, pages: list[tuple[str, str, str]], openai: AsyncOpenAI
 ) -> dict[str, Any]:
-    """Primary tries Brandfetch first (see _brandfetch_primary_colors); only
-    when Brandfetch has nothing does primary fall back to the top 3
-    most-used chromatic colors in the site's own CSS (_rank_css_colors),
-    taken directly by frequency rather than an LLM judgment call. Secondary
-    and semantic always come exclusively from the company's own compiled
-    CSS — inline <style> blocks AND external stylesheets — never from
-    Brandfetch, which can derive "accent colors" from logo/image analysis
-    rather than the site's actual design tokens."""
+    """Primary tries Brandfetch first (see _brandfetch_primary_colors). Only
+    when Brandfetch has nothing does this fall back to a fully deterministic
+    read of the site's own CSS: every section/text color in active use
+    (_rank_section_colors — grayscale included, since we're no longer
+    relying on Brandfetch to supply a legitimate black/white identity),
+    ranked by frequency with button-background usage added as a boost on
+    top (see _pick_fallback_primary) — a button is the single strongest
+    "this is our primary brand color" signal a site gives off. In that same
+    fallback, secondary becomes the next 8 most-used colors after primary
+    (no LLM judgment call, just frequency rank — once primary and semantic
+    are carved out). Semantic always comes exclusively from the company's
+    own compiled CSS — inline <style> blocks AND external stylesheets —
+    never from Brandfetch, which can derive "accent colors" from logo/image
+    analysis rather than the site's actual design tokens."""
     brandfetch_primary = _brandfetch_primary_colors(data)
 
     # _get_page_contents already prefers same-host pages, but filter again
@@ -723,54 +919,82 @@ async def _extract_colors(
         return (
             hex_code not in all_semantic_colors
             and hex_code not in _FRAMEWORK_DEFAULT_COLORS
+            and hex_code not in _BROWSER_DEFAULT_LINK_COLORS
             and count >= _MIN_COLOR_USAGE_COUNT
         )
 
-    # Secondary is deliberately narrower than "any frequent CSS color" — it
-    # must actually be painted onto the page as a section background or a
-    # font/text color, not just any hex that shows up somewhere in the
-    # stylesheet (e.g. a border or shadow tint nobody would call a brand color).
-    secondary_candidates = [(h, c) for h, c in _rank_section_colors(css_content) if _eligible(h, c)]
+    # Built once and reused for both section and button ranking below — see
+    # _build_custom_property_map / _resolve_block_colors for why this
+    # matters: most of a modern site's actual color usage goes through
+    # var(--token) rather than a literal hex on the declaration itself.
+    custom_props = _build_custom_property_map(css_content)
+
+    # Section/text colors actually painted onto the page — not just any hex
+    # that shows up somewhere in the stylesheet (e.g. a border or shadow
+    # tint nobody would call a brand color). Used as the candidate pool for
+    # secondary always, and for primary too in the no-Brandfetch fallback.
+    section_candidates = [
+        (h, c) for h, c in _rank_section_colors(css_content, custom_props) if _eligible(h, c)
+    ]
 
     def _format(colors: list[tuple[str, int]]) -> str:
         return ", ".join(f"{hex_code} (used {count}x)" for hex_code, count in colors) or "(none)"
 
     if brandfetch_primary:
         primary = brandfetch_primary
-    else:
-        # No Brandfetch data at all — fall back to the top 3 most-used
-        # colors from the site's own CSS (grayscale still excluded, see
-        # _rank_css_colors), taken directly by frequency rank rather than
-        # an LLM judgment call.
-        primary_candidates = [(h, c) for h, c in _rank_css_colors(css_content) if _eligible(h, c)]
-        primary = [h for h, _ in primary_candidates[:3]]
+        primary_set = {c.lower() for c in primary}
+        if not section_candidates:
+            return {"primary": primary, "secondary": [], "semantic": reported_semantic_colors}
 
+        response = await openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": (
+                    "These are hex colors declared as a section background or font/text color "
+                    "in a company's own website CSS, each with how many separate CSS rule blocks "
+                    "use it. Pick clearly intentional secondary/accent colors — used for "
+                    "highlights but not the main identity — up to 8. A deliberate neutral grey "
+                    "(e.g. muted secondary text, a card/section background) is a perfectly valid "
+                    "secondary color — don't reject it just for being grayscale. But leave out the "
+                    "page's generic plain white background or plain black body text (the "
+                    "universal base style every page has, not a brand choice), anything that "
+                    "looks like a generic UI-framework/CMS default swatch, or a one-off "
+                    "illustration color.\n"
+                    'Return JSON: {"secondary": ["#RRGGBB", ...]}. Empty list if nothing qualifies.'
+                )},
+                {"role": "user", "content": _format(section_candidates)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        picked = json.loads(response.choices[0].message.content)
+        secondary = [c for c in picked.get("secondary", [])[:8] if c.lower() not in primary_set]
+        return {"primary": primary, "secondary": secondary, "semantic": reported_semantic_colors}
+
+    # No Brandfetch data at all — fully deterministic fallback, no LLM call.
+    # Primary: top 3 by section/text frequency, boosted by button usage
+    # (grayscale included — see docstring). Button colors skip the
+    # >=2-rule-block usage floor `_eligible` applies —
+    # a site typically has far fewer button rule blocks than section ones,
+    # so a real button color can legitimately appear in just one.
+    def _button_eligible(hex_code: str) -> bool:
+        return (
+            hex_code not in all_semantic_colors
+            and hex_code not in _FRAMEWORK_DEFAULT_COLORS
+            and hex_code not in _BROWSER_DEFAULT_LINK_COLORS
+        )
+
+    button_candidates = [
+        (h, c) for h, c in _rank_button_colors(css_content, custom_props) if _button_eligible(h)
+    ]
+    primary = _pick_fallback_primary(section_candidates, button_candidates, limit=3)
+    # Secondary: the next 8 most-used colors after primary — no LLM judgment
+    # call, just frequency rank.
     primary_set = {c.lower() for c in primary}
-    if not secondary_candidates:
-        return {"primary": primary, "secondary": [], "semantic": reported_semantic_colors}
-
-    response = await openai.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": (
-                "These are hex colors declared as a section background or font/text color "
-                "in a company's own website CSS, each with how many separate CSS rule blocks "
-                "use it. Pick clearly intentional secondary/accent colors — used for "
-                "highlights but not the main identity — up to 8. A deliberate neutral grey "
-                "(e.g. muted secondary text, a card/section background) is a perfectly valid "
-                "secondary color — don't reject it just for being grayscale. But leave out the "
-                "page's generic plain white background or plain black body text (the "
-                "universal base style every page has, not a brand choice), anything that "
-                "looks like a generic UI-framework/CMS default swatch, or a one-off "
-                "illustration color.\n"
-                'Return JSON: {"secondary": ["#RRGGBB", ...]}. Empty list if nothing qualifies.'
-            )},
-            {"role": "user", "content": _format(secondary_candidates)},
-        ],
-        response_format={"type": "json_object"},
-    )
-    picked = json.loads(response.choices[0].message.content)
-    secondary = [c for c in picked.get("secondary", [])[:8] if c.lower() not in primary_set]
+    secondary = sorted(
+        (h for h, _ in section_candidates if h.lower() not in primary_set),
+        key=lambda h: dict(section_candidates)[h],
+        reverse=True,
+    )[:8]
     return {"primary": primary, "secondary": secondary, "semantic": reported_semantic_colors}
 
 
@@ -811,6 +1035,34 @@ def _extract_font_sizes(html: str, name: str) -> list[str]:
     return sorted(sizes)
 
 
+_FONT_WEIGHT_KEYWORDS = {"bold": "700", "normal": "400", "lighter": "300", "bolder": "700"}
+
+
+def _extract_general_font_signal(html: str) -> tuple[list[str], list[str]]:
+    """Site-wide fallback for font-size/font-weight when the per-name match in
+    `_extract_font_sizes` finds nothing — which is the common case for a
+    Brandfetch-sourced font name (e.g. "Anthropic Sans"), since Brandfetch's
+    display name rarely matches the literal CSS identifier a stylesheet
+    actually uses (e.g. "AnthropicSans", a CSS variable, or a Tailwind/atomic
+    utility class where `font-family` and `font-size`/`font-weight` are each
+    their own single-property rule and never share a block at all).
+
+    Collects every font-size/font-weight value declared *anywhere* in the
+    page's CSS, with no name or co-occurrence requirement. Much less precise
+    than the per-name match, but turns a hard zero into at least some signal
+    — and the interpretation layer (visualbranding/nodes/fonts.py) already
+    aggregates by dominant bucket per company, not per exact font, so
+    attributing a site's general type-scale to all of its fonts is an
+    acceptable trade for actually having data to classify on."""
+    sizes: set[str] = set()
+    weights: set[str] = set()
+    for s in re.findall(r'font-size\s*:\s*([\d.]+(?:px|rem|em|pt))', html, re.IGNORECASE):
+        sizes.add(s.lower())
+    for w in re.findall(r'font-weight\s*:\s*(\d{3}|bold|normal|lighter|bolder)\b', html, re.IGNORECASE):
+        weights.add(_FONT_WEIGHT_KEYWORDS.get(w.lower(), w.lower()))
+    return sorted(sizes), sorted(weights)
+
+
 async def _extract_fonts(
     data: dict, pages: list[tuple[str, str, str]]
 ) -> list[FontInfo] | None:
@@ -818,12 +1070,18 @@ async def _extract_fonts(
     brandfetch_fonts = data.get("fonts", [])
     if brandfetch_fonts:
         html_blob = " ".join(html for _, _, html in pages)
+        general_sizes, general_weights = _extract_general_font_signal(html_blob)
         result = [
             FontInfo(
                 name=f["name"],
                 type=f.get("type"),
-                weights=[str(f["weight"])] if f.get("weight") else None,
-                sizes=_extract_font_sizes(html_blob, f["name"]) or None,
+                # Per-name match first; site-wide fallback fills the gap when
+                # Brandfetch's display name doesn't literally appear in the
+                # site's CSS (see _extract_general_font_signal docstring).
+                weights=sorted(
+                    set([str(f["weight"])] if f.get("weight") else []) | set(general_weights)
+                ) or None,
+                sizes=sorted(set(_extract_font_sizes(html_blob, f["name"])) | set(general_sizes)) or None,
             )
             for f in brandfetch_fonts if f.get("name")
         ]
@@ -845,6 +1103,19 @@ async def _extract_fonts(
 
     found: dict[str, list[str]] = {}  # name -> weights
     generic = {"sans-serif", "serif", "monospace", "inherit", "initial", "unset", "cursive", "fantasy"}
+    # Universal OS/browser default fonts — without a real CSS parser, the
+    # regex below can't tell a font a company *deliberately* chose from one
+    # that's merely the 2nd/3rd item in some unrelated third-party widget's
+    # fallback stack (e.g. `font-family: Arial, sans-serif` in an embedded
+    # script). These render on virtually every site that loads no custom
+    # font at all, so they're the *absence* of a brand choice, not a signal.
+    system_fallback = {
+        "arial", "arial black", "helvetica", "helvetica neue", "times new roman",
+        "times", "verdana", "tahoma", "trebuchet ms", "georgia", "courier new",
+        "courier", "calibri", "segoe ui", "segoe ui symbol", "comic sans ms",
+        "impact", "lucida console", "lucida sans unicode", "ms sans serif",
+        "ms serif", "geneva", "consolas",
+    }
 
     # Google Fonts — captures weights straight from the URL when present
     for match in _GOOGLE_FONTS_RE.findall(html):
@@ -861,7 +1132,7 @@ async def _extract_fonts(
     # CSS font-family declarations
     for match in re.findall(r"font-family\s*:\s*['\"]?([A-Za-z][\w\s-]+?)['\"]?\s*[,;]", html):
         name = match.strip()
-        if name.lower() not in generic:
+        if name.lower() not in generic and name.lower() not in system_fallback:
             found.setdefault(name, [])
 
     if found:
@@ -1065,6 +1336,26 @@ def _html_window_text(html: str, fragment: str, window: int = 300) -> str:
     return re.sub(r"<[^>]+>", " ", html[start:end])
 
 
+# Adobe Experience Manager asset-delivery URLs (used by many enterprise
+# marketing sites, e.g. Celonis) embed a stable urn:aaid:aem:<uuid> asset ID
+# in the path — the SAME image gets requested at many different
+# widths/formats (width=750&format=jpg vs width=2000&format=webply, ...) for
+# responsive <picture>/srcset markup, which otherwise looks like dozens of
+# different "duplicate" images for what is visually one photo/illustration.
+_AEM_ASSET_ID_RE = re.compile(r"urn:aaid:aem:[0-9a-fA-F-]+")
+
+
+def _asset_identity_key(url: str) -> str:
+    """Identity for "the same asset, any size/format/query variant" — the
+    AEM asset ID when present, otherwise the URL with query string and
+    HTML-entity differences stripped."""
+    normalized = html_lib.unescape(url).strip()
+    aem_match = _AEM_ASSET_ID_RE.search(normalized)
+    if aem_match:
+        return aem_match.group(0)
+    return normalized.split("?", 1)[0]
+
+
 def _extract_images(
     data: dict, pages: list[tuple[str, str, str]], company: str, domain: str
 ) -> tuple[list[SourcedAsset], dict[str, str]]:
@@ -1073,9 +1364,12 @@ def _extract_images(
     icons: dict[str, str] = {}
 
     def _consider(url: str, source_page: str, alt: str = "", context: str = "") -> None:
-        if not url or url in seen:
+        if not url:
             return
-        seen.add(url)
+        key = _asset_identity_key(url)
+        if key in seen:
+            return
+        seen.add(key)
         kind = _classify_image(url, alt, context, company)
         if kind == "icon":
             icons[url] = alt or "icon"
@@ -1086,14 +1380,12 @@ def _extract_images(
 
     homepage = f"https://{domain}"
 
-    # Brandfetch — brand-level assets, not tied to a specific scraped page
-    for image in data.get("images", []):
-        for fmt in image.get("formats", []):
-            _consider(fmt.get("src"), homepage)
-
-    # HTML: Markdown images (with alt text + surrounding context), <img> tags,
-    # and img-like custom elements (e.g. <arc-image srcset="...">) that some
-    # sites use instead of plain <img>
+    # HTML first: Markdown images (with alt text + surrounding context), <img>
+    # tags, and img-like custom elements (e.g. <arc-image srcset="...">) that
+    # some sites use instead of plain <img>. Scanned before Brandfetch below
+    # so that when the same asset shows up in both sources, `_consider`'s
+    # `seen` guard keeps the genuine page it was actually found on instead of
+    # Brandfetch's generic homepage placeholder overwriting it.
     for page_url, markdown, html in pages:
         for m in re.finditer(r'!\[([^\]]*)\]\((https?://[^\)]+)\)', markdown):
             alt, url = m.group(1), html_lib.unescape(m.group(2))
@@ -1105,6 +1397,13 @@ def _extract_images(
                 continue
             context = _html_window_text(html, tag)
             _consider(url, page_url, alt, context)
+
+    # Brandfetch — brand-level assets, not tied to a specific scraped page.
+    # Only adds entries for assets that weren't already found above with a
+    # real page attached.
+    for image in data.get("images", []):
+        for fmt in image.get("formats", []):
+            _consider(fmt.get("src"), homepage)
 
     return images, icons
 
@@ -1166,27 +1465,51 @@ def _merge_dict(existing: dict[str, Any] | None, new: dict[str, Any]) -> dict[st
     return merged
 
 
-def _merge_sourced(existing: list[SourcedAsset] | None, new: list[SourcedAsset]) -> list[SourcedAsset]:
-    """Merge by URL, de-duplicating on both sides; fills in a missing source_page
-    or category from a later duplicate if the first-seen entry didn't have one.
+def _merge_sourced(
+    existing: list[SourcedAsset] | None, new: list[SourcedAsset], generic_pages: set[str] = frozenset()
+) -> list[SourcedAsset]:
+    """Merge by asset identity (see _asset_identity_key), de-duplicating on
+    both sides; fills in a missing source_page or category from a later
+    duplicate if the first-seen entry didn't have one.
+
+    Deduplicating by _asset_identity_key rather than the raw URL collapses:
+    (a) the same AEM-delivered image requested at different
+    widths/formats — "...width=750&format=jpg" and
+    "...width=2000&format=webply" are the same photo, just different
+    responsive variants pulled from different <picture>/srcset markup; and
+    (b) an old snapshot's HTML-entity-escaped "...&amp;w=3840" against a
+    freshly-scraped "...&w=3840" for the same image.
+    The first-seen URL variant is kept as the representative `.url`.
+
+    `generic_pages` (e.g. {homepage}) lets an already-stored entry whose
+    source_page is just that generic placeholder — from an older run that
+    only found the asset via Brandfetch, never on an actual scraped page —
+    get upgraded to a real page once one is found, instead of the
+    placeholder winning forever just for being first-seen.
 
     Field-by-field merging (not whole-object replacement) matters here: a
     freshly re-extracted entry never has a `category` yet (that's filled in
     separately, after merging, only for images still missing one) — wholesale
     replacement would silently throw away a category an older snapshot
     already paid an LLM call to determine."""
-    by_url: dict[str, SourcedAsset] = {}
+    by_key: dict[str, SourcedAsset] = {}
     for asset in [*(existing or []), *new]:
-        prev = by_url.get(asset.url)
+        key = _asset_identity_key(asset.url)
+        prev = by_key.get(key)
         if prev is None:
-            by_url[asset.url] = asset
+            by_key[key] = asset.model_copy(update={"url": html_lib.unescape(asset.url).strip()})
             continue
-        by_url[asset.url] = SourcedAsset(
-            url=asset.url,
-            source_page=prev.source_page or asset.source_page,
+        prev_page_is_generic = prev.source_page in generic_pages
+        new_page_is_specific = asset.source_page and asset.source_page not in generic_pages
+        source_page = asset.source_page if (prev_page_is_generic and new_page_is_specific) else (
+            prev.source_page or asset.source_page
+        )
+        by_key[key] = SourcedAsset(
+            url=prev.url,
+            source_page=source_page,
             category=prev.category or asset.category,
         )
-    return list(by_url.values())
+    return list(by_key.values())
 
 
 def _merge_fonts(existing: list[FontInfo] | None, new: list[FontInfo]) -> list[FontInfo]:
@@ -1228,7 +1551,8 @@ async def run(state: ResearchState) -> dict:
     if snapshot_exists(domain, "visuals"):
         logger.info("node_skipped_cached", node="visuals", domain=domain)
         return {"completed_nodes": ["visuals"]}
-    company = domain.split(".")[0].capitalize()
+    competitor_names = await get_competitor_names()
+    company = competitor_names.get(domain) or domain.split(".")[0].capitalize()
 
     try:
         openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
@@ -1258,7 +1582,13 @@ async def run(state: ResearchState) -> dict:
             l for l in merged_logos
             if not _is_third_party_logo(l, "") and _looks_like_own_logo(l, company)
         ]
-        merged_images = _merge_sourced(existing.images if existing else None, images or [])
+        # Re-dedupe the full merged list too — an SVG twin stored by a run
+        # before _dedupe_logo_formats existed would otherwise persist
+        # forever, since _merge_unique only adds new entries.
+        merged_logos = _dedupe_logo_formats(merged_logos)
+        merged_images = _merge_sourced(
+            existing.images if existing else None, images or [], generic_pages={f"https://{domain}"}
+        )
         merged_videos = _merge_sourced(existing.videos if existing else None, videos)
         # Re-check the full merged list against the (possibly newer/stricter)
         # logo/icon heuristics — same reasoning as the merged_logos re-check

@@ -1,11 +1,17 @@
 "use client";
 
+import { useMemo } from "react";
+
 import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 import { useLogoDimensions } from "@/lib/branding/hooks";
 import { DimensionBreakdownPanel } from "./DimensionBreakdownPanel";
 
 export function LogoDimensionBreakdown() {
   const { data, isLoading, isError, error } = useLogoDimensions();
+  const previewUrls = useMemo(() => {
+    if (!data) return undefined;
+    return Object.fromEntries(Object.entries(data.logoUrls).map(([company, url]) => [company, [url]]));
+  }, [data]);
 
   if (isLoading) return <ZoneSkeleton height={320} />;
   if (isError) return <ZoneError message={(error as Error)?.message} />;
@@ -18,7 +24,8 @@ export function LogoDimensionBreakdown() {
       label="Logo Dimensions"
       sublabel="How tracked competitors' logos break down across type, color, shape style, and signal shape"
       dimensions={data.dimensions}
-      logoUrls={data.logoUrls}
+      previewUrls={previewUrls}
+      previewNoun="logos"
     />
   );
 }

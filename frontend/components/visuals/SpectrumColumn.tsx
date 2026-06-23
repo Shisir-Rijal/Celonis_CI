@@ -1,7 +1,15 @@
 import type { ColorSpectrumEntry, UsageLabel } from "@/lib/branding/types";
 import { SpectrumEntryCard } from "./SpectrumEntryCard";
 
-export function SpectrumColumn({ usageLabel, entries }: { usageLabel: UsageLabel; entries: ColorSpectrumEntry[] }) {
+export function SpectrumColumn({
+  usageLabel,
+  entries,
+  totalCompetitors,
+}: {
+  usageLabel: UsageLabel;
+  entries: ColorSpectrumEntry[];
+  totalCompetitors: number;
+}) {
   return (
     <div className="flex flex-col gap-1 min-w-0">
       <div className="flex items-center justify-between pb-2 border-b border-white/15">
@@ -15,7 +23,7 @@ export function SpectrumColumn({ usageLabel, entries }: { usageLabel: UsageLabel
       ) : (
         <div className="flex flex-col">
           {entries.map((entry) => (
-            <SpectrumEntryCard key={entry.colorFamily} entry={entry} />
+            <SpectrumEntryCard key={entry.colorFamily} entry={entry} totalCompetitors={totalCompetitors} />
           ))}
         </div>
       )}

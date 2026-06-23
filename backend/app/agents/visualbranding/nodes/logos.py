@@ -17,6 +17,7 @@ changed since this node's last run.
 """
 
 import json
+import re
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -59,13 +60,56 @@ _POSITIONS = (
 
 _MAX_PLACEMENT_SAMPLES = 3  # marketing images checked per company for logo placement
 
+# Brandfetch CDN URLs always end in a literal /logo.<ext>, /icon.<ext>, or
+# /symbol.<ext> segment — VisualsData.logo is a flat URL list with no
+# separate "asset type" field, so this is the only place that distinction
+# survives down to this node.
+_BRANDFETCH_ASSET_TYPE_RE = re.compile(r"/(logo|icon|symbol)\.[a-zA-Z]+(?:\?|$)")
+
+
+def _brandfetch_asset_type(url: str) -> str | None:
+    match = _BRANDFETCH_ASSET_TYPE_RE.search(url)
+    return match.group(1).lower() if match else None
+
+
+def _pick_representative_logo_urls(urls: list[str]) -> list[str]:
+    """Up to 2 URLs per company: the main "logo" lockup (preferred primary)
+    plus, if scraped as a distinct asset, a separate "icon"/"symbol" crop.
+
+    Picking just one URL (the old behavior) silently decided a company's
+    logo *type* by which asset happened to sort first in Brandfetch's
+    response — e.g. Databricks' icon.jpeg crop sorted ahead of its actual
+    main logo.png, so the vision classifier only ever saw the icon and
+    called it "Icon-only". Showing both (when both exist) lets the
+    classifier see that a company maintains a standalone icon *and* a
+    wordmark — i.e. a combination identity — even when no single asset
+    file shows them combined (Anthropic ships its wordmark and its
+    asterisk icon as two separate Brandfetch files, never composited)."""
+    by_type: dict[str, list[str]] = {}
+    untyped: list[str] = []
+    for url in urls:
+        asset_type = _brandfetch_asset_type(url)
+        (by_type.setdefault(asset_type, []) if asset_type else untyped).append(url)
+
+    logo_url = pick_vision_compatible_url(by_type.get("logo", []) or untyped)
+    icon_url = pick_vision_compatible_url(by_type.get("icon", []) or by_type.get("symbol", []))
+
+    candidates = [u for u in (logo_url, icon_url) if u]
+    if candidates:
+        return candidates
+    # No Brandfetch-typed asset matched at all (non-Brandfetch source) —
+    # fall back to whatever the old single-pick logic would have chosen.
+    fallback = pick_vision_compatible_url(urls) or (urls[0] if urls else None)
+    return [fallback] if fallback else []
+
 
 # ---------------------------------------------------------------------------
 # Source data
 # ---------------------------------------------------------------------------
 
-async def _build_logo_data() -> tuple[dict[str, str], dict[str, list[str]], str]:
-    """({domain: primary logo URL}, {domain: [marketing image URLs]}, fingerprint).
+async def _build_logo_data() -> tuple[dict[str, list[str]], dict[str, list[str]], str]:
+    """({domain: [1-2 representative logo URLs]}, {domain: [marketing image
+    URLs]}, fingerprint).
 
     Fingerprint covers only the logo dimension (must match graph.py's
     detect_changes_node exactly) — images are auxiliary input for placement,
@@ -75,12 +119,8 @@ async def _build_logo_data() -> tuple[dict[str, str], dict[str, list[str]], str]
     logo_dim = extract_dimension(visuals_by_domain, "logo")
     fingerprint = compute_fingerprint(logo_dim)
 
-    # Brandfetch often serves SVG as the *first* logo variant; OpenAI vision
-    # can't read SVG, and one bad URL fails the entire combined classification
-    # call (every company in it, not just this one) — prefer a raster variant
-    # when one exists, falling back to urls[0] only if every option is SVG.
     logos_by_domain = {
-        d: pick_vision_compatible_url(urls) or urls[0] for d, urls in logo_dim.items() if urls
+        d: picked for d, urls in logo_dim.items() if urls and (picked := _pick_representative_logo_urls(urls))
     }
     images_by_domain = {
         d: pick_vision_compatible_urls(
@@ -101,10 +141,16 @@ def _pct(count: int, total: int) -> float:
 # ---------------------------------------------------------------------------
 
 async def _classify_logos_vision(
-    logos_by_domain: dict[str, str], openai: AsyncOpenAI
+    logos_by_domain: dict[str, list[str]], openai: AsyncOpenAI
 ) -> dict[str, dict[str, str]]:
     """{domain: {type, color, shape_style, signal_shape}} — one combined
-    vision call classifying every competitor's logo at once."""
+    vision call classifying every competitor's logo at once. Each company
+    contributes 1-2 images: its main logo lockup, plus (when Brandfetch
+    scraped it as a separate asset) its standalone icon/symbol mark — so the
+    model can tell "this brand maintains both a wordmark and a standalone
+    icon" (→ Combination mark) from "this brand only ever has an icon"
+    (→ Icon-only), instead of guessing from whichever single asset happened
+    to be picked."""
     if not logos_by_domain:
         return {}
     domains = list(logos_by_domain.keys())
@@ -112,10 +158,16 @@ async def _classify_logos_vision(
         {
             "type": "text",
             "text": (
-                "Each image below is one company's logo, labeled by index. For each, "
+                "Each company below contributes one or two images, labeled by index. When two "
+                "images are shown, the first is the company's main logo lockup and the second is "
+                "a *separate* standalone icon/symbol asset they also maintain. For each company, "
                 "classify it on four dimensions:\n"
-                f'- type: exactly one of {list(_TYPES)} (Wordmark = text only, '
-                "Combination mark = text + icon, Icon-only = symbol with no text)\n"
+                f'- type: exactly one of {list(_TYPES)} — "Wordmark" only if there is no separate '
+                'icon/symbol image AND the main logo is text-only; "Icon-only" only if there is no '
+                'separate text/wordmark image at all; "Combination mark" if a separate icon/symbol '
+                "image was shown alongside a primarily-text main logo (the brand uses both, even if "
+                "no single file shows them composited together), or if the main logo image itself "
+                "already shows text plus an icon together\n"
                 f"- color: exactly one of {list(_COLORS)}\n"
                 f"- shape_style: exactly one of {list(_SHAPE_STYLES)} (overall letterform/icon style)\n"
                 f"- signal_shape: exactly one of {list(_SIGNAL_SHAPES)} (the dominant icon "
@@ -127,7 +179,8 @@ async def _classify_logos_vision(
     ]
     for i, domain in enumerate(domains):
         content.append({"type": "text", "text": f"Index {i}: {domain_to_company(domain)}"})
-        content.append({"type": "image_url", "image_url": {"url": logos_by_domain[domain]}})
+        for url in logos_by_domain[domain]:
+            content.append({"type": "image_url", "image_url": {"url": url}})
 
     try:
         response = await openai.chat.completions.create(
@@ -226,10 +279,10 @@ async def run(state: VisualBrandingState) -> dict:
     signal_categories = _buckets_to_categories(signal_buckets, total_companies)
 
     placement_buckets: dict[str, set[str]] = {}
-    for domain, logo_url in logos_by_domain.items():
+    for domain, urls in logos_by_domain.items():
         company = domain_to_company(domain)
         position = await _classify_placement_vision(
-            domain, logo_url, images_by_domain.get(domain, []), openai
+            domain, urls[0], images_by_domain.get(domain, []), openai
         )
         placement_buckets.setdefault(position, set()).add(company)
     placement = [
@@ -237,7 +290,7 @@ async def run(state: VisualBrandingState) -> dict:
         for pos, companies in placement_buckets.items()
     ]
 
-    logo_urls = {domain_to_company(d): url for d, url in logos_by_domain.items()}
+    logo_urls = {domain_to_company(d): urls[0] for d, urls in logos_by_domain.items()}
 
     analysis = LogoAnalysis(
         type=type_categories,

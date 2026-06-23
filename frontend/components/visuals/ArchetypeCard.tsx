@@ -31,21 +31,17 @@ export function ArchetypeCard({ archetype }: { archetype: BrandArchetype }) {
             ))}
             </div>
         )}
+
+        
         <span className="text-2xl font-medium text-primary-black">{archetype.name}</span>
         <p className="text-sm text-neutral-grey-20 leading-relaxed">{archetype.vibe}</p>
-        <div className="flex flex-col gap-3 text-sm text-neutral-grey-20">
-            {archetype.typography && (
-            <span>
-                <span className="text-primary-black font-medium">Typography — </span>
-                {archetype.typography}
+        <div className="flex flex-col gap-1.5 text-sm text-neutral-grey-20 overflow-y-auto">
+            {archetype.traits.map((t) => (
+            <span key={t.topic}>
+                <span className="text-primary-black font-medium">{t.topic} — </span>
+                {t.description}
             </span>
-            )}
-            {archetype.coloring && (
-            <span>
-                <span className="text-primary-black font-medium">Coloring — </span>
-                {archetype.coloring}
-            </span>
-            )}
+            ))}
         </div>
         <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-xs border-grey-10">
             {archetype.companies.map((c) => (

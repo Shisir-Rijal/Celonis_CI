@@ -9,6 +9,14 @@ import type { ColorSpectrumEntry } from "@/lib/branding/types";
 
 type ColorTypeFilter = "primary" | "secondary";
 
+// True hue-angle gradient (not approximate named CSS colors) so every band
+// lines up exactly with the dots, which are placed by the same 0-360 hue
+// value. `from 90deg` accounts for the dots' angle convention starting at
+// the 3 o'clock position (cos/sin with hue=0) instead of conic-gradient's
+// default 12 o'clock start.
+const HUE_WHEEL_GRADIENT =
+  "conic-gradient(from 90deg, hsl(0,75%,50%), hsl(60,75%,50%), hsl(120,75%,50%), hsl(180,75%,50%), hsl(240,75%,50%), hsl(300,75%,50%), hsl(360,75%,50%))";
+
 export function HueWheel({ spectrum }: { spectrum: ColorSpectrumEntry[] }) {
   const [colorType, setColorType] = useState<ColorTypeFilter>("primary");
 
@@ -23,14 +31,14 @@ export function HueWheel({ spectrum }: { spectrum: ColorSpectrumEntry[] }) {
       .filter((p): p is { company: string; hex: string; hue: number } => p.hue !== null);
   }, [spectrum, colorType]);
 
-  const radius = 150;
+  const radius = 170;
   const labelGap = 16;
   const size = radius * 2 + 220;
   const center = size / 2;
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full p-0.5">
+      <div className="flex items-center gap-1 bg-black border border-white/10 rounded-full p-0.5">
         {(["primary", "secondary"] as ColorTypeFilter[]).map((t) => (
           <button
             key={t}
@@ -58,11 +66,11 @@ export function HueWheel({ spectrum }: { spectrum: ColorSpectrumEntry[] }) {
               top: center - radius,
               width: radius * 2,
               height: radius * 2,
-              background: "conic-gradient(red, orange, yellow, lime, green, cyan, blue, violet, magenta, red)",
+              background: HUE_WHEEL_GRADIENT,
             }}
           />
           <div
-            className="absolute rounded-full bg-neutral-grey-30"
+            className="absolute rounded-full bg-black"
             style={{
               left: center - radius + 16,
               top: center - radius + 16,
@@ -107,11 +115,6 @@ export function HueWheel({ spectrum }: { spectrum: ColorSpectrumEntry[] }) {
           })}
         </div>
       )}
-
-      <p className="text-[11px] text-neutral-grey-20 text-center max-w-xs">
-        Each dot is one competitor&apos;s {colorType} color, positioned by its actual hue angle —
-        tight clusters show where the market converges, empty arcs show whitespace.
-      </p>
     </div>
   );
 }

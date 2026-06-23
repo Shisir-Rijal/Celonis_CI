@@ -7,14 +7,17 @@ import SectionWrapper from "@components/ui/SectionWrapper";
 import { BrandingOverview } from "@components/visuals/BrandingOverview";
 import { ColorComparison } from "@components/visuals/ColorComparison";
 import { FontComparison } from "@components/visuals/FontComparison";
+import { FontDimensionBreakdown } from "@components/visuals/FontDimensionBreakdown";
+import { FontDiversity } from "@components/visuals/FontDiversity";
+import { FontArchetypes } from "@components/visuals/FontArchetypes";
 import { ImageryArchetypes } from "@components/visuals/ImageryArchetypes";
-import { ArchetypesSlider } from '@components/visuals/ArchetypesSlider'
+import { ArchetypesSlider, FixedArchetypesSlider } from '@components/visuals/ArchetypesSlider'
 import { ImageryDimensionBreakdown } from "@components/visuals/ImageryDimensionBreakdown";
 import { ImagerySimilarityNetwork } from "@components/visuals/charts/ImagerySimilarityNetwork";
 import { LogoDimensionBreakdown } from "@components/visuals/LogoDimensionBreakdown";
 import { LogoPlacementGrid } from "@components/visuals/LogoPlacementGrid";
 import { VisualTrendCards } from "@components/visuals/VisualTrendCards";
-import { useEvents } from "@/lib/events/hooks";
+import { useBrandArchetypes } from "@/lib/branding/hooks";
 
 function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -29,10 +32,10 @@ function formatRelativeTime(iso: string | null | undefined): string {
 }
 
 export default function EventsPage() {
-  const { data } = useEvents();
+  const { data } = useBrandArchetypes();
   const updatedAt = useMemo(
-    () => formatRelativeTime(data?.latest_run_at),
-    [data?.latest_run_at]
+    () => formatRelativeTime(data?.generatedAt),
+    [data?.generatedAt]
   );
 
   return (
@@ -81,6 +84,14 @@ export default function EventsPage() {
         <ArchetypesSlider />
       </SectionWrapper>
 
+      {/* Zone 3b — Marketing Archetypes (12 fixed Mark & Pearson archetypes) */}
+      <SectionWrapper
+        label="Marketing Archetypes"
+        description="Same visual identity data, classified into the 12 established brand archetypes (Innocent, Sage, Hero, ...) instead of freely-named clusters."
+      >
+        <FixedArchetypesSlider />
+      </SectionWrapper>
+
       {/* Zone 4 — Colors */}
       <SectionWrapper
         label="Colors"
@@ -94,7 +105,14 @@ export default function EventsPage() {
         label="Fonts"
         description="Analysis of brand fonts"
       >
-        <FontComparison />
+        <div className="flex flex-col gap-4">
+          <FontArchetypes />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <FontDimensionBreakdown />
+            <FontDiversity />
+          </div>
+          <FontComparison />
+        </div>
       </SectionWrapper>
 
       {/* Zone 6 — Logos */}

@@ -32,6 +32,11 @@ GET /branding/archetypes
     holistic brand archetype per company or company group, synthesized from
     every other node's latest analysis.
 
+GET /branding/fixed-archetypes
+    Latest FixedArchetypeAnalysis (nodes/fixed_archetypes.py) — every company
+    classified into one of the 12 fixed Mark & Pearson marketing archetypes
+    instead of a freely LLM-named cluster.
+
 GET /branding/alerts
     Latest AlertAnalysis — what changed since each node's previous run.
 
@@ -103,36 +108,73 @@ def _build_company_hex_lookup(diversities: list[dict]) -> dict[tuple[str, str], 
     return lookup
 
 
+def _build_secondary_hex_lookup(diversities: list[dict]) -> dict[str, set[str]]:
+    """{company: {that company's secondary hex codes}} — lets the spectrum's
+    usedBy entries report each company's *actual* colorType instead of
+    assuming every entry is a primary color."""
+    lookup: dict[str, set[str]] = {}
+    for d in diversities or []:
+        company = d.get("company")
+        if company:
+            lookup[company] = set(d.get("secondary_hexes") or [])
+    return lookup
+
+
 def _adapt_color_spectrum_entry(
-    bucket_key: str, bucket: dict, company_hex: dict[tuple[str, str], str]
+    bucket_key: str,
+    bucket: dict,
+    company_hex: dict[tuple[str, str], str],
+    secondary_hexes: dict[str, set[str]],
 ) -> dict[str, Any]:
     companies: list[str] = bucket.get("companies", [])
     family = bucket.get("type")
     hex_code = bucket.get("color")
+
+    def color_type(company: str, hex_value: str) -> str:
+        return "secondary" if hex_value in secondary_hexes.get(company, set()) else "primary"
+
     return {
         "colorFamily": family,
         "representativeHex": hex_code,
         "usageLabel": _USAGE_LABELS[bucket_key],
         "usageCount": len(companies),
         "usedBy": [
-            {"company": c, "hex": company_hex.get((c, family), hex_code), "colorType": "primary"}
+            {
+                "company": c,
+                "hex": company_hex.get((c, family), hex_code),
+                "colorType": color_type(c, company_hex.get((c, family), hex_code)),
+            }
             for c in companies
         ],
         "association": bucket.get("description"),
     }
 
 
+def _first_bucket_entry(data: dict) -> dict | None:
+    """First spectrum entry across any usage tier, in priority order — used
+    just to read a `generated_at` timestamp, so it doesn't matter which tier
+    happens to be non-empty this run."""
+    for key in ("very_common", "common", "occasional", "rare"):
+        bucket = data.get(key) or []
+        if bucket:
+            return bucket[0]
+    return None
+
+
 def adapt_color_analysis(data: dict) -> dict[str, Any]:
-    company_hex = _build_company_hex_lookup(data.get("diversities", []))
+    diversities = data.get("diversities", [])
+    company_hex = _build_company_hex_lookup(diversities)
+    secondary_hexes = _build_secondary_hex_lookup(diversities)
     spectrum = [
-        _adapt_color_spectrum_entry(key, data[key], company_hex)
+        _adapt_color_spectrum_entry(key, bucket, company_hex, secondary_hexes)
         for key in ("very_common", "common", "occasional", "rare")
-        if data.get(key)
+        for bucket in (data.get(key) or [])
     ]
     diversity = [
         {
             "company": d["company"],
             "hues": [{"hueFamily": h["hue_family"], "colors": h["colors"]} for h in d.get("hues", [])],
+            "secondaryHexes": d.get("secondary_hexes", []),
         }
         for d in data.get("diversities", [])
     ]
@@ -149,7 +191,16 @@ def adapt_color_analysis(data: dict) -> dict[str, Any]:
             "coolCompanies": cold,
             "neutralCompanies": neutral,
         },
-        "generatedAt": (data.get("very_common") or {}).get("generated_at"),
+        "warmCoolBreakdown": [
+            {
+                "company": e.get("company"),
+                "primary": e.get("primary"),
+                "secondary": e.get("secondary"),
+                "overall": e.get("overall"),
+            }
+            for e in data.get("warm_cool_breakdown", [])
+        ],
+        "generatedAt": _first_bucket_entry(data).get("generated_at") if _first_bucket_entry(data) else None,
     }
 
 
@@ -160,7 +211,7 @@ async def get_color_insights(_: None = Depends(require_auth)) -> dict[str, Any]:
         return {"spectrum": [], "diversity": [], "warmCoolSplit": {
             "warmPct": 0, "coolPct": 0, "neutralPct": 0,
             "warmCompanies": [], "coolCompanies": [], "neutralCompanies": [],
-        }, "generatedAt": None}
+        }, "warmCoolBreakdown": [], "generatedAt": None}
     return adapt_color_analysis(data)
 
 
@@ -171,6 +222,7 @@ async def get_color_insights(_: None = Depends(require_auth)) -> dict[str, Any]:
 _FONT_DIMENSION_LABELS = {
     "classification": "Classification",
     "weight_emphasis": "Weight Emphasis",
+    "size_emphasis": "Size Emphasis",
     "personality": "Personality",
 }
 
@@ -217,7 +269,15 @@ def adapt_font_analysis(data: dict) -> dict[str, Any]:
                 "label": _FONT_DIMENSION_LABELS[key],
                 "categories": [_adapt_dimension_category(c) for c in data.get(key, [])],
             }
-            for key in ("classification", "weight_emphasis", "personality")
+            for key in ("classification", "weight_emphasis", "size_emphasis", "personality")
+        ],
+        "usage": [
+            {
+                "company": u.get("company"),
+                "distinctFontCount": u.get("distinct_font_count"),
+                "fontFamilies": u.get("font_families", []),
+            }
+            for u in data.get("usage", [])
         ],
         "generatedAt": generated_at,
     }
@@ -227,7 +287,7 @@ def adapt_font_analysis(data: dict) -> dict[str, Any]:
 async def get_font_insights(_: None = Depends(require_auth)) -> dict[str, Any]:
     data = _latest_snapshot("fonts")
     if not data:
-        return {"similarFonts": [], "archetypes": [], "dimensions": [], "generatedAt": None}
+        return {"similarFonts": [], "archetypes": [], "dimensions": [], "usage": [], "generatedAt": None}
     return adapt_font_analysis(data)
 
 
@@ -335,6 +395,7 @@ def adapt_imagery_dimensions(data: dict) -> dict[str, Any]:
             }
             for key, label in _IMAGERY_DIMENSION_LABELS.items()
         ],
+        "imageSamples": data.get("image_samples", {}),
         "generatedAt": any_category.get("generated_at") if any_category else None,
     }
 
@@ -349,6 +410,12 @@ def adapt_imagery_similarity(data: dict) -> dict[str, Any]:
                 "source": s.get("company_a"),
                 "target": s.get("company_b"),
                 "similarity": s.get("similarity"),
+                "sharedTraits": [
+                    {"dimension": t.get("dimension"), "value": t.get("value")}
+                    for t in s.get("shared_traits", [])
+                ],
+                "sampleImagesA": s.get("sample_images_a", []),
+                "sampleImagesB": s.get("sample_images_b", []),
             }
             for s in similarity
         ],
@@ -368,7 +435,7 @@ async def get_imagery_archetypes(_: None = Depends(require_auth)) -> dict[str, A
 async def get_imagery_dimensions(_: None = Depends(require_auth)) -> dict[str, Any]:
     data = _latest_snapshot("images")
     if not data:
-        return {"dimensions": [], "generatedAt": None}
+        return {"dimensions": [], "imageSamples": {}, "generatedAt": None}
     return adapt_imagery_dimensions(data)
 
 
@@ -448,6 +515,8 @@ def adapt_visual_trends(data: dict) -> dict[str, Any]:
                 "element": t.get("element"),
                 "direction": t.get("direction"),
                 "summary": t.get("summary"),
+                "headline": t.get("headline"),
+                "headlineDetail": t.get("headline_detail"),
             }
             for t in trends
         ],
@@ -467,6 +536,10 @@ async def get_visual_trends(_: None = Depends(require_auth)) -> dict[str, Any]:
 # Brand archetypes (cross-dimension synthesis — nodes/archetypes.py)
 # ---------------------------------------------------------------------------
 
+def _adapt_archetype_traits(archetype: dict) -> list[dict[str, Any]]:
+    return [{"topic": t.get("topic"), "description": t.get("description")} for t in archetype.get("traits", [])]
+
+
 def adapt_brand_archetypes(data: dict) -> dict[str, Any]:
     archetypes = data.get("archetypes", [])
     return {
@@ -475,8 +548,7 @@ def adapt_brand_archetypes(data: dict) -> dict[str, Any]:
                 "name": a.get("naming"),
                 "keywords": a.get("keywords", []),
                 "vibe": a.get("vibe"),
-                "typography": a.get("typography"),
-                "coloring": a.get("coloring"),
+                "traits": _adapt_archetype_traits(a),
                 "image": a.get("sample_image"),
                 "companies": a.get("companies", []),
             }
@@ -492,6 +564,36 @@ async def get_brand_archetypes(_: None = Depends(require_auth)) -> dict[str, Any
     if not data:
         return {"archetypes": [], "generatedAt": None}
     return adapt_brand_archetypes(data)
+
+
+# ---------------------------------------------------------------------------
+# Fixed (12 Mark & Pearson) brand archetypes — nodes/fixed_archetypes.py
+# ---------------------------------------------------------------------------
+
+def adapt_fixed_archetypes(data: dict) -> dict[str, Any]:
+    archetypes = data.get("archetypes", [])
+    return {
+        "archetypes": [
+            {
+                "name": a.get("naming"),
+                "keywords": a.get("keywords", []),
+                "vibe": a.get("vibe"),
+                "traits": _adapt_archetype_traits(a),
+                "image": a.get("sample_image"),
+                "companies": a.get("companies", []),
+            }
+            for a in archetypes
+        ],
+        "generatedAt": archetypes[0].get("generated_at") if archetypes else None,
+    }
+
+
+@router.get("/fixed-archetypes")
+async def get_fixed_archetypes(_: None = Depends(require_auth)) -> dict[str, Any]:
+    data = _latest_snapshot("fixed_archetypes")
+    if not data:
+        return {"archetypes": [], "generatedAt": None}
+    return adapt_fixed_archetypes(data)
 
 
 # ---------------------------------------------------------------------------

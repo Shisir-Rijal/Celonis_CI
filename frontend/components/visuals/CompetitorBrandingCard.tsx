@@ -6,6 +6,7 @@ import { ChevronDown, ExternalLink, Play } from "lucide-react";
 import DashboardCard from "@components/geo/DashboardCard";
 import type { ImageCategory, VisualsItem } from "@/lib/visuals/types";
 import { useGoogleFonts, cleanFontName } from "@/lib/visuals/useGoogleFonts";
+import { dedupeFontsForDisplay } from "@/lib/visuals/dedupeFonts";
 import type { GalleryItem } from "./Lightbox";
 
 const IMAGE_CATEGORY_LABELS: Record<ImageCategory, string> = {
@@ -86,7 +87,11 @@ export function CompetitorBrandingCard({
   const secondary = [...new Set(item.colors?.secondary ?? [])].filter((c) => !primary.includes(c));
   const semanticEntries = Object.entries(item.colors?.semantic ?? {});
   const [showSemantic, setShowSemantic] = useState(false);
-  const fonts = item.fonts ?? [];
+  // Display only: collapse weight/style/script variants of the same family
+  // (e.g. "ServiceNow Sans", "...Bold", "...Light") into one entry — the
+  // Fonts section below reads every scraped variant untouched for its
+  // analysis, this card just shouldn't show the same font three times.
+  const fonts = useMemo(() => dedupeFontsForDisplay(item.fonts ?? []), [item.fonts]);
   const images = item.images ?? [];
   const iconEntries = Object.entries(item.icons ?? {});
   const videos = item.videos ?? [];
@@ -190,9 +195,12 @@ export function CompetitorBrandingCard({
 
       {showLogos && visibleLogos.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="text-[11px] text-neutral-grey-20 uppercase tracking-widest">
-            Logos
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-neutral-grey-20 uppercase tracking-widest">
+              Logos
+            </span>
+            <span className="text-[10px] text-neutral-grey-20">{visibleLogos.length}</span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {visibleLogos.slice(0, 4).map((src, i) => (
               <button
@@ -223,38 +231,29 @@ export function CompetitorBrandingCard({
 
       {showFonts && fonts.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="text-[11px] text-neutral-grey-20 uppercase tracking-widest">
-            Fonts
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-neutral-grey-20 uppercase tracking-widest">
+              Fonts
+            </span>
+            <span className="text-[10px] text-neutral-grey-20">{fonts.length}</span>
+          </div>
           <div className="flex flex-wrap gap-2">
-            {fonts.slice(0, 6).map((f, i) => {
-              const details = [
-                f.weights?.length ? `${f.weights.join("/")}` : null,
-                f.sizes?.length ? `${f.sizes.join(", ")}` : null,
-              ].filter(Boolean);
-              return (
-                <div
-                  key={f.name}
-                  title={details.length ? details.join(" · ") : undefined}
-                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-sm bg-white/5 border border-white/10"
+            {fonts.slice(0, 6).map((f, i) => (
+              <div
+                key={f.name}
+                className="flex flex-col items-center gap-1 px-3 py-2 rounded-sm bg-white/5 border border-white/10"
+              >
+                <span
+                  style={{ fontFamily: `"${fontNames[i]}", sans-serif` }}
+                  className="text-base text-primary-white leading-none"
                 >
-                  <span
-                    style={{ fontFamily: `"${fontNames[i]}", sans-serif` }}
-                    className="text-base text-primary-white leading-none"
-                  >
-                    Sample
-                  </span>
-                  <span className="text-[10px] text-neutral-grey-20 truncate max-w-[100px]">
-                    {f.name}
-                  </span>
-                  {details.length > 0 && (
-                    <span className="text-[9px] text-neutral-grey-20/70 truncate max-w-[100px]">
-                      {details.join(" · ")}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                  Sample
+                </span>
+                <span className="text-[10px] text-neutral-grey-20 truncate max-w-25">
+                  {f.name}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

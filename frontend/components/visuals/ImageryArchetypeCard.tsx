@@ -6,7 +6,7 @@ import type { ImageryArchetype } from "@/lib/branding/types";
 
 export function ImageryArchetypeCard({ archetype }: { archetype: ImageryArchetype }) {
   return (
-    <DashboardCard className="flex flex-col gap-3 bg-primary-white border-black/8">
+    <DashboardCard className="flex flex-col gap-3 bg-primary-white border-black/8 w-72 shrink-0">
       <div className="aspect-[4/3] rounded-md bg-black/5 border border-black/10 overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={archetype.image} alt={archetype.name} className="w-full h-full object-cover" />

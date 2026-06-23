@@ -18,6 +18,8 @@ export function ImageryDimensionBreakdown() {
       label="Imagery Dimensions"
       sublabel="How tracked competitors' imagery breaks down across style, effect, subject matter, look & feel, and color scheme"
       dimensions={data.dimensions}
+      previewUrls={data.imageSamples}
+      previewNoun="images"
     />
   );
 }

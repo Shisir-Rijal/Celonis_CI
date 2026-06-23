@@ -2,9 +2,9 @@
 
 GET /competitors/colors
     Returns the best brand color per tracked company, derived from the
-    latest visuals snapshot. Excludes pure white (#ffffff) and pure black
-    (#000000). Falls back to first secondary color when primary only
-    contains those two.
+    latest visuals snapshot. Prefers the first chromatic (non grey/white/
+    black) primary color; falls back to a chromatic secondary, then any
+    non-white/black primary or secondary, if nothing chromatic is found.
 
 GET /visuals
     Returns the full visuals payload (logo, colors, fonts, images, videos)
@@ -41,13 +41,41 @@ def _valid(color: str) -> bool:
     return color.lower().strip() not in _EXCLUDED
 
 
+def _is_grayscale(color: str) -> bool:
+    """True for black/white/grey — R, G, B channels all close to equal.
+    Catches near-black/near-white design-system foundation tones (e.g. IBM's
+    #161616, #F4F4F4) that the exact-match _EXCLUDED list above misses,
+    since those aren't the company's actual accent color either."""
+    h = color.lstrip("#").strip()
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        return False
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return False
+    return max(r, g, b) - min(r, g, b) <= 12
+
+
 def _pick_color(colors_data: dict) -> str | None:
-    """Return the first valid primary color, or first valid secondary color."""
+    """Prefer the first chromatic (non grey/white/black) primary color —
+    that's the company's actual accent, not a neutral foundation tone.
+    Falls back to the first chromatic secondary, then any valid primary,
+    then any valid secondary, if nothing chromatic is found anywhere."""
     primary = [c for c in (colors_data.get("primary") or []) if _valid(c)]
+    secondary = [c for c in (colors_data.get("secondary") or []) if _valid(c)]
+
+    chromatic_primary = [c for c in primary if not _is_grayscale(c)]
+    if chromatic_primary:
+        return chromatic_primary[0]
+
+    chromatic_secondary = [c for c in secondary if not _is_grayscale(c)]
+    if chromatic_secondary:
+        return chromatic_secondary[0]
+
     if primary:
         return primary[0]
-
-    secondary = [c for c in (colors_data.get("secondary") or []) if _valid(c)]
     if secondary:
         return secondary[0]
 

@@ -2,7 +2,16 @@ import type { ColorSpectrumEntry } from "@/lib/branding/types";
 import { CompanyChip } from "./CompanyChip";
 import { Swatch } from "./Swatch";
 
-export function SpectrumEntryCard({ entry }: { entry: ColorSpectrumEntry }) {
+export function SpectrumEntryCard({
+  entry,
+  totalCompetitors,
+}: {
+  entry: ColorSpectrumEntry;
+  totalCompetitors: number;
+}) {
+  const primaryCount = entry.usedBy.filter((u) => u.colorType === "primary").length;
+  const secondaryCount = entry.usedBy.filter((u) => u.colorType === "secondary").length;
+
   return (
     <div className="flex flex-col gap-2 py-3 border-b border-white/8 last:border-b-0">
       <div className="flex items-center gap-2">
@@ -21,6 +30,10 @@ export function SpectrumEntryCard({ entry }: { entry: ColorSpectrumEntry }) {
       {entry.association && (
         <p className="text-[11px] text-neutral-grey-20 leading-relaxed">{entry.association}</p>
       )}
+      <span className="text-[11px] text-neutral-grey-10">
+        {entry.usageCount}/{totalCompetitors} brands use {entry.colorFamily.toLowerCase()}
+        {entry.usedBy.length > 0 && ` (${primaryCount} primary · ${secondaryCount} secondary)`}
+      </span>
     </div>
   );
 }
