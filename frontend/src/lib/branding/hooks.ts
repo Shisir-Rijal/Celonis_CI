@@ -5,6 +5,7 @@ import type {
   BrandArchetypes,
   BrandingAlerts,
   ColorInsights,
+  FixedBrandArchetypes,
   FontInsights,
   ImageryArchetypes,
   ImageryDimensionBreakdown,
@@ -21,6 +22,14 @@ export function useBrandArchetypes() {
   return useQuery({
     queryKey: ["branding", "archetypes"],
     queryFn: () => apiFetch<BrandArchetypes>("/branding/archetypes"),
+    staleTime: STALE_TIME,
+  });
+}
+
+export function useFixedBrandArchetypes() {
+  return useQuery({
+    queryKey: ["branding", "fixed-archetypes"],
+    queryFn: () => apiFetch<FixedBrandArchetypes>("/branding/fixed-archetypes"),
     staleTime: STALE_TIME,
   });
 }

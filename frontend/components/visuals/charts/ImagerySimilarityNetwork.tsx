@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import dynamic from "next/dynamic";
+import { X } from "lucide-react";
 
 import DashboardCard from "@components/geo/DashboardCard";
 import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
 import { useImagerySimilarity } from "@/lib/branding/hooks";
 import { isHomeCompany } from "@/lib/competitors/highlight";
+import type { ImagerySimilarityLink } from "@/lib/branding/types";
 
 // ECharts must be imported client-side only (uses window)
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
@@ -15,6 +18,7 @@ const MIN_SIMILARITY_TO_SHOW = 0.3;
 
 export function ImagerySimilarityNetwork() {
   const { data, isLoading, isError, error } = useImagerySimilarity();
+  const [selectedLink, setSelectedLink] = useState<ImagerySimilarityLink | null>(null);
 
   if (isLoading) return <ZoneSkeleton height={360} />;
   if (isError) return <ZoneError message={(error as Error)?.message} />;
@@ -24,6 +28,26 @@ export function ImagerySimilarityNetwork() {
 
   const maxImages = Math.max(1, ...data.nodes.map((n) => n.imageCount));
   const links = data.links.filter((l) => l.similarity >= MIN_SIMILARITY_TO_SHOW);
+
+  const handleChartClick = (params: {
+    dataType?: string;
+    data: { source?: string; target?: string; id?: string; name?: string };
+  }) => {
+    if (params.dataType === "edge") {
+      const match = links.find(
+        (l) => l.source === params.data.source && l.target === params.data.target
+      );
+      if (match) setSelectedLink(match);
+      return;
+    }
+    if (params.dataType === "node") {
+      const company = params.data.id ?? params.data.name;
+      const best = links
+        .filter((l) => l.source === company || l.target === company)
+        .sort((a, b) => b.similarity - a.similarity)[0];
+      if (best) setSelectedLink(best);
+    }
+  };
 
   const echartsNodes = data.nodes.map((n) => {
     const home = isHomeCompany(n.company);
@@ -112,7 +136,12 @@ export function ImagerySimilarityNetwork() {
       label="Imagery Similarity"
       sublabel="Competitors whose imagery style (across style, effect, subject, look & feel, color scheme) clusters together"
     >
-      <ReactECharts option={option} style={{ width: "100%", height: 320 }} opts={{ renderer: "svg" }} />
+      <ReactECharts
+        option={option}
+        style={{ width: "100%", height: 320 }}
+        opts={{ renderer: "svg" }}
+        onEvents={{ click: handleChartClick }}
+      />
       <div className="flex items-center gap-5 text-[11px] text-neutral-grey-20 mt-2" style={{ fontFamily: CHART_FONT }}>
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-full bg-secondary-green border-2 border-green-600 shrink-0" />
@@ -123,9 +152,81 @@ export function ImagerySimilarityNetwork() {
           <span>Competitors</span>
         </div>
         <span className="ml-auto text-neutral-grey-10">
-          Node size = images analyzed · edge thickness = similarity · drag nodes to rearrange
+          Node size = images analyzed · edge thickness = similarity · click a node or connection for details
         </span>
       </div>
+
+      {selectedLink ? (
+        <div className="mt-4 pt-4 border-t border-black/8">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-primary-black">
+              {selectedLink.source} ↔ {selectedLink.target}
+              <span className="text-neutral-grey-20 font-normal">
+                {" "}
+                · {Math.round(selectedLink.similarity * 100)}% imagery similarity
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedLink(null)}
+              aria-label="Close similarity details"
+              className="text-neutral-grey-20 hover:text-primary-black cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {selectedLink.sharedTraits.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {selectedLink.sharedTraits.map((t) => (
+                <span
+                  key={t.dimension}
+                  className="text-[11px] px-2 py-0.5 rounded-full bg-secondary-green/10 text-green-700 border border-secondary-green/20"
+                >
+                  {t.dimension}: {t.value}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-neutral-grey-20">{selectedLink.source}</span>
+              <div className="flex gap-1.5 flex-wrap">
+                {selectedLink.sampleImagesA.map((src) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <a key={src} href={src} target="_blank" rel="noreferrer">
+                    <img
+                      src={src}
+                      alt={`${selectedLink.source} imagery sample`}
+                      className="w-16 h-16 object-cover rounded-md border border-black/10"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-neutral-grey-20">{selectedLink.target}</span>
+              <div className="flex gap-1.5 flex-wrap">
+                {selectedLink.sampleImagesB.map((src) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <a key={src} href={src} target="_blank" rel="noreferrer">
+                    <img
+                      src={src}
+                      alt={`${selectedLink.target} imagery sample`}
+                      className="w-16 h-16 object-cover rounded-md border border-black/10"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-[11px] text-neutral-grey-20 mt-3">
+          Click a node or connection above to see which images are similar and why.
+        </p>
+      )}
     </DashboardCard>
   );
 }

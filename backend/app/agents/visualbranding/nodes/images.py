@@ -13,6 +13,7 @@ Only invoked when `detect_changes_node` (graph.py) found the images
 dimension changed since this node's last run.
 """
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from itertools import combinations
@@ -32,6 +33,7 @@ from app.agents.visualbranding.source_data import (
     extract_dimension,
     get_latest_visuals_by_domain,
     pick_vision_compatible_url,
+    pick_vision_compatible_urls,
 )
 from app.agents.visualbranding.state import (
     ArchetypeAnalysis,
@@ -47,9 +49,28 @@ logger = structlog.get_logger(__name__)
 
 NODE_NAME = "images"
 
-_STYLES = ("Photorealistic", "Illustration", "3D Render", "Abstract")
+# "Gradient" called out separately from "Abstract" — a smooth multi-color
+# gradient/blob background (OpenAI's signature look) is a distinct, very
+# recognizable style choice, not just a generic "Abstract" composition.
+_STYLES = ("Photorealistic", "Illustration", "3D Render", "Gradient", "Abstract")
 _EFFECTS = ("Minimalist", "Vibrant", "Moody", "Clean")
-_SUBJECTS = ("People", "Product/UI", "Abstract shapes", "Data visualization")
+# Beyond generic content type, several competitors' imagery is defined by
+# *which industry/setting* it depicts (e.g. Palantir's military/defense
+# scenes) — a generic "People" bucket erases that distinction entirely, even
+# though it's one of the more telling brand signals in the set. The vocab
+# below keeps the original non-figurative buckets (Product/UI, Abstract
+# shapes, Data visualization) but replaces the single catch-all "People" with
+# specific depicted contexts. "Mascot/Character" is its own bucket too — a
+# branded illustrated character (e.g. UiPath's robot mascot) was previously
+# forced into "Abstract shapes" for lack of anywhere else to go, which made
+# its actual classification look wrong even though the model had no better
+# option to pick from.
+_SUBJECTS = (
+    "Product/UI", "Abstract shapes", "Data visualization", "Mascot/Character",
+    "Office/Corporate", "Military/Defense", "Government/Public sector",
+    "Industrial/Manufacturing", "Healthcare/Medical", "Finance/Trading",
+    "Logistics/Supply chain", "Retail/Consumer", "Technology/Engineering",
+)
 _LOOK_FEELS = ("Corporate", "Playful", "Technical", "Editorial")
 _COLOR_SCHEMES = ("Monochrome", "Brand-colored", "Multicolor", "Muted/Pastel")
 
@@ -90,50 +111,100 @@ def _pct(count: int, total: int) -> float:
 # Vision classification — style / effect / subject / look & feel / color scheme
 # ---------------------------------------------------------------------------
 
+_SAMPLE_IMAGES_PER_DOMAIN = 4
+
+
+def _classification_prompt(count: int) -> str:
+    return (
+        f"Below are {count} representative marketing images from one company — they may mix "
+        "photos and illustrations. Looking at all of them together, classify the company's "
+        "overall predominant imagery style across five dimensions:\n"
+        f"- style: exactly one of {list(_STYLES)} — use \"Gradient\" for smooth multi-color "
+        'gradient/blob backgrounds, not "Abstract"\n'
+        f"- effect: exactly one of {list(_EFFECTS)}\n"
+        f"- subject: exactly one of {list(_SUBJECTS)} — pick the most specific one that matches "
+        "what is actually depicted (e.g. soldiers, weapons, or command centers -> "
+        '"Military/Defense", not a generic people category; office workers in a meeting -> '
+        '"Office/Corporate"; a branded illustrated character/mascot -> "Mascot/Character", not '
+        '"Abstract shapes"; only use "Product/UI"/"Abstract shapes"/"Data visualization" when no '
+        "real-world setting, person, or character is shown at all\n"
+        f"- look_feel: exactly one of {list(_LOOK_FEELS)}\n"
+        f"- color_scheme: exactly one of {list(_COLOR_SCHEMES)}\n\n"
+        'Return JSON: {"style": "...", "effect": "...", "subject": "...", '
+        '"look_feel": "...", "color_scheme": "..."}.'
+    )
+
+
+async def _ask_vision(urls: list[str], openai: AsyncOpenAI) -> dict[str, str]:
+    content: list[dict] = [{"type": "text", "text": _classification_prompt(len(urls))}]
+    for url in urls:
+        content.append({"type": "image_url", "image_url": {"url": url}})
+    response = await openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": content}],
+        response_format={"type": "json_object"},
+    )
+    return json.loads(response.choices[0].message.content)
+
+
+def _sample_urls(urls: list[str]) -> list[str]:
+    """Up to _SAMPLE_IMAGES_PER_DOMAIN images — the same picking logic used
+    for vision classification below is also reused to build the frontend's
+    per-company preview thumbnails, so what's shown in the UI is always
+    grounded in what the model actually looked at when assigning a category.
+    A single cherry-picked "representative" image can easily not support the
+    verdict at all (e.g. showing only a company's one mascot image under an
+    "Abstract shapes" bucket the model assigned based on its other, genuinely
+    abstract images) — showing the whole sample set lets the user judge the
+    classification's basis for themselves instead of just the worst case."""
+    sample_urls = pick_vision_compatible_urls(urls, _SAMPLE_IMAGES_PER_DOMAIN)
+    if sample_urls:
+        return sample_urls
+    single = pick_vision_compatible_url(urls)
+    return [single] if single else []
+
+
+async def _classify_domain_vision(
+    domain: str, urls: list[str], openai: AsyncOpenAI
+) -> dict[str, str] | None:
+    """One company's classification from up to _SAMPLE_IMAGES_PER_DOMAIN of its
+    images (so a company that mixes photos and illustrations gets a holistic
+    verdict, not just whatever its single first-scraped image happens to be).
+    Isolated per company — a bad/timed-out image URL only drops that one
+    company's classification instead of failing every competitor's at once,
+    which previously collapsed everyone into the same default archetype."""
+    sample_urls = _sample_urls(urls)
+    if not sample_urls:
+        return None
+
+    try:
+        return await _ask_vision(sample_urls, openai)
+    except Exception as exc:
+        logger.warning(
+            "images_vision_classification_failed", domain=domain, error=str(exc), images=len(sample_urls)
+        )
+        if len(sample_urls) == 1:
+            return None
+        try:
+            return await _ask_vision(sample_urls[:1], openai)
+        except Exception as exc2:
+            logger.warning("images_vision_classification_failed", domain=domain, error=str(exc2), images=1)
+            return None
+
+
 async def _classify_images_vision(
     images_by_domain: dict[str, list[str]], openai: AsyncOpenAI
 ) -> dict[str, dict[str, str]]:
     """{domain: {style, effect, subject, look_feel, color_scheme}} — one
-    combined vision call classifying every competitor's representative
-    (first scraped) marketing image at once."""
+    isolated vision call per company, run concurrently, each looking at
+    several of that company's images."""
     if not images_by_domain:
         return {}
     domains = list(images_by_domain.keys())
-    content: list[dict] = [
-        {
-            "type": "text",
-            "text": (
-                "Each image below is one company's representative marketing image, labeled "
-                "by index. For each, classify it on five dimensions:\n"
-                f"- style: exactly one of {list(_STYLES)}\n"
-                f"- effect: exactly one of {list(_EFFECTS)}\n"
-                f"- subject: exactly one of {list(_SUBJECTS)}\n"
-                f"- look_feel: exactly one of {list(_LOOK_FEELS)}\n"
-                f"- color_scheme: exactly one of {list(_COLOR_SCHEMES)}\n\n"
-                'Return JSON: {"<index>": {"style": "...", "effect": "...", "subject": "...", '
-                '"look_feel": "...", "color_scheme": "..."}, ...} for every index given.'
-            ),
-        }
-    ]
-    for i, domain in enumerate(domains):
-        urls = images_by_domain[domain]
-        # One bad URL (e.g. SVG, which vision can't read) fails this entire
-        # combined call for every company in it — prefer a raster variant.
-        representative = pick_vision_compatible_url(urls) or urls[0]
-        content.append({"type": "text", "text": f"Index {i}: {domain_to_company(domain)}"})
-        content.append({"type": "image_url", "image_url": {"url": representative}})
-
-    try:
-        response = await openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": content}],
-            response_format={"type": "json_object"},
-        )
-        raw = json.loads(response.choices[0].message.content)
-        return {domains[int(i)]: v for i, v in raw.items() if i.isdigit() and int(i) < len(domains)}
-    except Exception as exc:
-        logger.warning("images_vision_classification_failed", error=str(exc))
-        return {}
+    results = await asyncio.gather(
+        *[_classify_domain_vision(d, images_by_domain[d], openai) for d in domains]
+    )
+    return {d: r for d, r in zip(domains, results) if r}
 
 
 # ---------------------------------------------------------------------------
@@ -209,21 +280,34 @@ def _build_similarity(
 ) -> list[ImagerySimilarity]:
     """Pairwise similarity = fraction of matching dimension values between
     two companies' classified profiles. Only pairs with at least one shared
-    dimension are reported — an all-zero pair isn't a meaningful link."""
-    dim_keys = [key for key, _, _ in _DIMENSIONS]
+    dimension are reported — an all-zero pair isn't a meaningful link. Each
+    match also records *which* dimension(s) matched and on what value (the
+    "why"), plus a few sample images from each side so the frontend can show
+    an actual side-by-side, not just a percentage."""
     domains = list(images_by_domain.keys())
+    sample_images = {
+        d: pick_vision_compatible_urls(urls, _SAMPLE_IMAGES_PER_DOMAIN) or urls[:_SAMPLE_IMAGES_PER_DOMAIN]
+        for d, urls in images_by_domain.items()
+    }
     results: list[ImagerySimilarity] = []
     for domain_a, domain_b in combinations(domains, 2):
         profile_a = classifications.get(domain_a) or {}
         profile_b = classifications.get(domain_b) or {}
-        matches = sum(1 for k in dim_keys if profile_a.get(k) and profile_a.get(k) == profile_b.get(k))
-        if matches == 0:
+        shared_traits = [
+            {"dimension": label, "value": profile_a[key]}
+            for key, label, _ in _DIMENSIONS
+            if profile_a.get(key) and profile_a.get(key) == profile_b.get(key)
+        ]
+        if not shared_traits:
             continue
         results.append(
             ImagerySimilarity(
                 company_a=domain_to_company(domain_a),
                 company_b=domain_to_company(domain_b),
-                similarity=round(matches / len(dim_keys), 2),
+                similarity=round(len(shared_traits) / len(_DIMENSIONS), 2),
+                shared_traits=shared_traits,
+                sample_images_a=sample_images.get(domain_a, []),
+                sample_images_b=sample_images.get(domain_b, []),
             )
         )
     return results
@@ -277,6 +361,10 @@ async def run(state: VisualBrandingState) -> dict:
         ImageUsage(company=domain_to_company(domain), count=len(urls))
         for domain, urls in images_by_domain.items()
     ]
+    image_samples = {
+        domain_to_company(domain): _sample_urls(urls)
+        for domain, urls in images_by_domain.items()
+    }
 
     analysis = ImageAnalysis(
         archetypes=archetypes,
@@ -287,6 +375,7 @@ async def run(state: VisualBrandingState) -> dict:
         look_feel=dimension_categories["look_feel"],
         color_scheme=dimension_categories["color_scheme"],
         usage=usage,
+        image_samples=image_samples,
     )
 
     alerts: list[str] = []

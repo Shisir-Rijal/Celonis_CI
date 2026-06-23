@@ -175,19 +175,38 @@ async def _get_representative_images(companies: set[str]) -> dict[str, str | Non
 # LLM naming for brand-new clusters
 # ---------------------------------------------------------------------------
 
+# trait-signature key -> human topic label, only the topics actually present
+# in a cluster's signature get a bullet (e.g. no "Video" bullet if none of
+# its companies have scraped video data yet).
+_TRAIT_TOPICS = {
+    "color_temp": "Color",
+    "color_hue": "Color",
+    "font_classification": "Typography",
+    "font_personality": "Typography",
+    "logo_type": "Logo",
+    "logo_color": "Logo",
+    "image_style": "Imagery",
+    "image_effect": "Imagery",
+    "video_format": "Video",
+}
+
+
 async def _name_new_clusters(
     clusters: dict[tuple, set[str]],
     previous_names: list[str],
     openai: AsyncOpenAI,
 ) -> dict[tuple, dict]:
-    """{cluster key -> {"name", "keywords", "vibe", "typography", "coloring"}}."""
+    """{cluster key -> {"name", "keywords", "vibe", "traits": [{"topic", "description"}, ...]}}."""
     if not clusters:
         return {}
     keys = list(clusters.keys())
     rows = []
     for i, key in enumerate(keys):
         traits = dict(key)
-        rows.append(f"{i}: traits={traits}, companies={sorted(clusters[key])}")
+        topics = sorted({_TRAIT_TOPICS[k] for k in traits if k in _TRAIT_TOPICS})
+        rows.append(
+            f"{i}: traits={traits}, topics_to_cover={topics}, companies={sorted(clusters[key])}"
+        )
     instruction = naming_stability_instruction(previous_names)
     try:
         response = await openai.chat.completions.create(
@@ -202,11 +221,12 @@ async def _name_new_clusters(
                         "which companies share them. A cluster may contain just one company.\n\n"
                         "For each row, invent a short, evocative brand archetype name (2-4 words, "
                         'e.g. "Bold Technical Disruptor", "Calm Enterprise Trust"), 3-5 single-word '
-                        "keywords capturing its vibe, and one-sentence summaries each for overall "
-                        "vibe, typography, and coloring." + instruction +
+                        "keywords capturing its vibe, a one-sentence overall vibe summary, and one "
+                        "short bullet-point sentence per topic listed in topics_to_cover (skip any "
+                        "topic not listed — that dimension has no data for this cluster)." + instruction +
                         ' Return JSON: {"<row index>": {"name": "...", "keywords": ["...", ...], '
-                        '"vibe": "...", "typography": "...", "coloring": "..."}, ...} for every '
-                        "row given."
+                        '"vibe": "...", "traits": [{"topic": "...", "description": "..."}, ...]}, '
+                        "...} for every row given."
                     ),
                 },
                 {"role": "user", "content": "\n".join(rows)},
@@ -222,8 +242,7 @@ async def _name_new_clusters(
                 "name": "Emerging Style",
                 "keywords": [],
                 "vibe": "Distinct visual identity not yet seen in this competitive set.",
-                "typography": "",
-                "coloring": "",
+                "traits": [],
             }
             for key in keys
         }
@@ -292,8 +311,7 @@ async def run(state: VisualBrandingState) -> dict:
                 naming=arche["naming"],
                 keywords=arche.get("keywords", []),
                 vibe=arche.get("vibe", ""),
-                typography=arche.get("typography", ""),
-                coloring=arche.get("coloring", ""),
+                traits=arche.get("traits", []),
                 sample_image=arche.get("sample_image"),
                 companies=sorted(companies),
                 signature=_aggregate_signature(companies, signatures),
@@ -310,8 +328,7 @@ async def run(state: VisualBrandingState) -> dict:
                 naming=info.get("name", "Emerging Style"),
                 keywords=info.get("keywords", []),
                 vibe=info.get("vibe", ""),
-                typography=info.get("typography", ""),
-                coloring=info.get("coloring", ""),
+                traits=info.get("traits", []),
                 sample_image=sample_image,
                 companies=sorted(companies),
                 signature=dict(key),

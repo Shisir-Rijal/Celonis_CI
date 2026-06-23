@@ -45,6 +45,7 @@ export type EventsAnalysis = {
   celonisCount: number;
   celonisShare: number;
   mostActiveCompetitor: { name: string; count: number } | null;
+  topTrendingTopic: { topic: string; count: number } | null;
   perCompany: PerCompany[];
   formatMix: FormatRow[];
   regionMix: RegionRow[];
@@ -79,7 +80,11 @@ export function computeAnalysis(events: EventItem[], allCompanies: string[]): Ev
     .map(([company, count]) => ({ company, count, isCelonis: isCelonis(company) }))
     .sort((a, b) => b.count - a.count);
 
-  const mostActiveCompetitor = perCompany.find((c) => !c.isCelonis) ?? null;
+  // `perCompany` entries are {company, count, isCelonis} — map to the
+  // {name, count} shape the KPI card actually expects, or `.name` is
+  // `undefined` at runtime and the card silently falls back to "—".
+  const topCompetitor = perCompany.find((c) => !c.isCelonis) ?? null;
+  const mostActiveCompetitor = topCompetitor ? { name: topCompetitor.company, count: topCompetitor.count } : null;
 
   // Format mix
   const fmtMap: Record<string, { online: number; inPerson: number }> = {};
@@ -133,6 +138,24 @@ export function computeAnalysis(events: EventItem[], allCompanies: string[]): Ev
     .map(([topic, total]) => ({ topic, total }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 10);
+
+  // Top trending topic specifically within the last 3 months — `trendingTopics`
+  // above is all-time (other charts depend on that), so this is computed
+  // separately from a date-filtered subset rather than just taking
+  // trendingTopics[0].
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  const recentTopicCountMap: Record<string, number> = {};
+  for (const e of events) {
+    if (!e.event_topic || !e.event_date) continue;
+    const d = new Date(e.event_date);
+    if (isNaN(d.getTime()) || d < threeMonthsAgo) continue;
+    recentTopicCountMap[e.event_topic] = (recentTopicCountMap[e.event_topic] ?? 0) + 1;
+  }
+  const topTrendingTopic = Object.entries(recentTopicCountMap)
+    .map(([topic, count]) => ({ topic, count }))
+    .sort((a, b) => b.count - a.count)[0] ?? null;
+
   const topicByCompany = trendingTopics.slice(0, 8).map(({ topic }) => ({
     topic,
     ...Object.fromEntries(
@@ -192,5 +215,5 @@ export function computeAnalysis(events: EventItem[], allCompanies: string[]): Ev
       ? { thisYear, lastYear, direction: pctChange > 0 ? "up" : pctChange < 0 ? "down" : "flat", pctChange }
       : null;
 
-  return { total, celonisCount, celonisShare, mostActiveCompetitor, perCompany, formatMix, regionMix, trendingTopics, topicByCompany, coverageGap, topicGap, momentum };
+  return { total, celonisCount, celonisShare, mostActiveCompetitor, topTrendingTopic, perCompany, formatMix, regionMix, trendingTopics, topicByCompany, coverageGap, topicGap, momentum };
 }

@@ -73,29 +73,6 @@ def diff_named_groups(
     return fragments
 
 
-def diff_single_bucket(
-    label: str, old: dict | None, new: _NamedGroup, name_field: str = "naming"
-) -> str | None:
-    """Same idea as `diff_named_groups` but for a single bucket (e.g. colors'
-    very_common/common/occasional/rare, which are one entry, not a list)."""
-    new_name, new_companies = _as_name(new, name_field), _as_company_set(new)
-    if old is None:
-        return None  # first-ever run — initial data, not a change
-    old_name, old_companies = _as_name(old, name_field), _as_company_set(old)
-    if new_name != old_name:
-        return f'{label}: changed from "{old_name}" to "{new_name}"'
-    added = new_companies - old_companies
-    removed = old_companies - new_companies
-    parts = []
-    if added:
-        parts.append(f"gained {', '.join(sorted(added))}")
-    if removed:
-        parts.append(f"lost {', '.join(sorted(removed))}")
-    if not parts:
-        return None
-    return f'{label} ("{new_name}"): ' + ", ".join(parts)
-
-
 def diff_company_lists(label: str, old: list[str] | None, new: list[str]) -> str | None:
     """Compare two flat company lists (e.g. colors' warm/cold/neutral)."""
     if old is None:

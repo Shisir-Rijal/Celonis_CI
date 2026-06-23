@@ -28,7 +28,7 @@ import structlog
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.visualbranding.nodes import archetypes, colors, fonts, images, logos, trends, videos
+from app.agents.visualbranding.nodes import archetypes, colors, fixed_archetypes, fonts, images, logos, trends, videos
 from app.agents.visualbranding.repositories.visualbranding_repository import (
     compute_fingerprint,
     get_latest_fingerprint,
@@ -134,6 +134,7 @@ builder.add_node("videos", videos.run)
 builder.add_node("build_alerts", build_alerts_node)
 builder.add_node("trends", trends.run)
 builder.add_node("brand_archetypes", archetypes.run)
+builder.add_node("fixed_archetypes", fixed_archetypes.run)
 
 builder.add_edge(START, "detect_changes")
 builder.add_conditional_edges(
@@ -148,15 +149,17 @@ builder.add_conditional_edges(
         END: END,
     },
 )
-# Fan-in: build_alerts, trends, and brand_archetypes all run once every
-# interpretation node that was scheduled this round has finished —
-# independent of each other.
+# Fan-in: build_alerts, trends, brand_archetypes, and fixed_archetypes all
+# run once every interpretation node that was scheduled this round has
+# finished — independent of each other.
 for node_name in ("colors", "fonts", "logos", "images", "videos"):
     builder.add_edge(node_name, "build_alerts")
     builder.add_edge(node_name, "trends")
     builder.add_edge(node_name, "brand_archetypes")
+    builder.add_edge(node_name, "fixed_archetypes")
 builder.add_edge("build_alerts", END)
 builder.add_edge("trends", END)
 builder.add_edge("brand_archetypes", END)
+builder.add_edge("fixed_archetypes", END)
 
 visualbranding_graph = builder.compile()

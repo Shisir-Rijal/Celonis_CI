@@ -44,14 +44,37 @@ class ColorDiversity(BaseData):
     company: str
     count: int
     hues: list[HueGroup]
+    # This company's secondary hexes (flat, not hue-grouped) — lets the API
+    # layer tell, per company per hue family, whether the color it's showing
+    # was actually primary or secondary for that company (see adapt_color_
+    # analysis in api/visualbranding.py), instead of assuming primary always.
+    secondary_hexes: list[str] = []
+
+class WarmCoolEntry(BaseModel):
+    # nested fragment of the warm/cool/neutral breakdown, not a standalone
+    # finding — no BaseData. One of "warm"/"cool"/"neutral", or None if this
+    # company has no colors of that type at all (e.g. no secondary palette
+    # scraped) so a primary/secondary-only view can't classify it.
+    company: str
+    primary: str | None
+    secondary: str | None
+    overall: str  # from the combined primary+secondary palette
 
 class ColorAnalysis(BaseModel): # wird übergeben an VisualBrandingState
-    very_common: ColorSpectrum
-    common: ColorSpectrum
-    occasional: ColorSpectrum
-    rare: ColorSpectrum
+    # Each usage tier can hold any number of hue families (e.g. every family
+    # used by >=50% of tracked competitors lands in very_common) — not
+    # capped to exactly one, or a family like "Red" could rank 2nd/3rd most
+    # popular and still never appear anywhere in the spectrum.
+    very_common: list[ColorSpectrum]
+    common: list[ColorSpectrum]
+    occasional: list[ColorSpectrum]
+    rare: list[ColorSpectrum]
     diversities: list[ColorDiversity]
-    warm: list[str]     # Companies
+    # Per-company warm/cool/neutral split by color type, so the frontend can
+    # filter the Warm vs. Cool card to primary-only/secondary-only/combined
+    # without a separate round trip (see api/visualbranding.py).
+    warm_cool_breakdown: list[WarmCoolEntry] = []
+    warm: list[str]     # Companies, from the combined (primary+secondary) palette
     cold: list[str]
     neutral: list[str]
 
@@ -70,12 +93,21 @@ class FontArchetype(BaseData):
     sample_font_name: str
     companies: list[str]
 
+class FontUsage(BaseData):
+    company: str
+    # Distinct font *families* actually in use — script/language variants of the
+    # same family (e.g. "IBM Plex Sans" + "IBM Plex Sans Arabic") count once.
+    distinct_font_count: int
+    font_families: list[str]
+
 class FontAnalysis(BaseModel):
     similar_fonts: list[SimilarFontGroup]
     archetypes: list[FontArchetype]
     classification: list[DimensionCategory]   # Serif / Sans-serif / Monospace / Display
     weight_emphasis: list[DimensionCategory]  # Light / Regular / Bold-heavy
+    size_emphasis: list[DimensionCategory]    # Compact / Standard / Large
     personality: list[DimensionCategory]      # Modern / Traditional / Playful / Technical
+    usage: list[FontUsage]                    # how many distinct fonts each competitor uses
 
 
 # --Logo-Node:
@@ -104,10 +136,18 @@ class ArchetypeAnalysis(BaseData):
     sample_image: str  # representative image URL illustrating this style cluster
     companies: list[str]
 
+class SharedImageTrait(BaseModel):
+    # nested fragment of one ImagerySimilarity insight, not standalone — no BaseData
+    dimension: str  # e.g. "Style"
+    value: str      # e.g. "Illustration"
+
 class ImagerySimilarity(BaseData):
     company_a: str
     company_b: str
     similarity: float  # 0-1
+    shared_traits: list[SharedImageTrait] = []  # which dimensions matched and on what value — the "why"
+    sample_images_a: list[str] = []  # a few of company_a's images, for a visual side-by-side
+    sample_images_b: list[str] = []  # a few of company_b's images, for a visual side-by-side
 
 class ImageUsage(BaseData):
     company: str
@@ -122,6 +162,10 @@ class ImageAnalysis(BaseModel):
     look_feel: list[DimensionCategory]
     color_scheme: list[DimensionCategory]
     usage: list[ImageUsage]
+    image_samples: dict[str, list[str]] = {}  # {company: up to a few sample image URLs} — the
+                                               # same images the vision classifier looked at, so the
+                                               # frontend can preview the actual basis for a company's
+                                               # classification in any bucket above, not one arbitrary pick
 
 
 # --Video-Node:
@@ -149,9 +193,12 @@ class VideoAnalysis(BaseModel):
 # --Trends-Node:
 
 class ElementTrend(BaseData):
-    element: str     # "Color" | "Font" | "Logo" | "Imagery" | "Video"
+    element: str     # "Color" | "Font" | "Logo" | "Imagery"
     direction: str   # "up" | "down" | "flat"
     summary: str
+    headline: str | None = None         # the single most common trait for this element, e.g. "Blue", "Rounded"
+    headline_detail: str | None = None  # how many competitors share it, and any change since last run
+    headline_count: int | None = None   # raw count behind headline_detail — kept for next run's change comparison
 
 class TrendAnalysis(BaseModel):
     trends: list[ElementTrend]
@@ -159,12 +206,16 @@ class TrendAnalysis(BaseModel):
 # --Brand-Archetype-Node: cross-dimension synthesis, not gated on a single
 # raw VisualsData field — built from every other node's persisted output.
 
+class ArchetypeTrait(BaseModel):
+    # nested fragment of one archetype card, not standalone — no BaseData
+    topic: str         # e.g. "Color", "Typography", "Logo", "Imagery", "Video"
+    description: str   # one-sentence summary of how this archetype manifests on that topic
+
 class BrandArchetype(BaseData):
     naming: str
     keywords: list[str]       # short vibe descriptors, e.g. ["Bold", "Technical", "Disruptive"]
     vibe: str                 # one-sentence overall personality summary
-    typography: str           # one-sentence summary of this cluster's typographic identity
-    coloring: str              # one-sentence summary of this cluster's color identity
+    traits: list[ArchetypeTrait] = []  # per-topic breakdown (color/typography/logo/imagery/video)
     sample_image: str | None  # representative image URL, or None if nothing scraped yet
     companies: list[str]      # can be a single company — not every archetype needs 2+ members
     # Per-dimension trait signature this archetype was built from (color_temp,
@@ -175,6 +226,23 @@ class BrandArchetype(BaseData):
 
 class BrandArchetypeAnalysis(BaseModel):
     archetypes: list[BrandArchetype]
+
+
+# --Fixed-Archetype-Node: same cross-dimension synthesis as BrandArchetype
+# above, but classified into the 12 fixed Mark & Pearson marketing archetypes
+# (see nodes/fixed_archetypes.py) instead of freely-named LLM clusters —
+# stable, recognizable vocabulary for cross-run trend tracking.
+
+class FixedBrandArchetype(BaseData):
+    naming: str                # one of FIXED_ARCHETYPE_NAMES (nodes/fixed_archetypes.py)
+    keywords: list[str]
+    vibe: str
+    traits: list[ArchetypeTrait] = []
+    sample_image: str | None
+    companies: list[str]
+
+class FixedArchetypeAnalysis(BaseModel):
+    archetypes: list[FixedBrandArchetype]
 
 
 class AlertAnalysis(BaseModel):
@@ -198,6 +266,7 @@ class VisualBrandingState(TypedDict):
     videos: NotRequired[VideoAnalysis]
     trends: NotRequired[TrendAnalysis]
     brand_archetypes: NotRequired[BrandArchetypeAnalysis]
+    fixed_archetypes: NotRequired[FixedArchetypeAnalysis]
     alerts: NotRequired[AlertAnalysis]
 
     # Per-dimension change-description fragments (see alerts.py) — each is

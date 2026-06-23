@@ -1,4 +1,13 @@
-/** Hue angle (0-360) for a hex color, or null for achromatic colors (black/white/grey) that have no meaningful hue. */
+/**
+ * Hue angle (0-360) for a hex color, or null for achromatic colors
+ * (black/white/grey) that have no meaningful hue.
+ *
+ * Threshold is 0.12 (~30/255 channel spread) — matches colors.py's
+ * `_hex_to_hue` on the backend. A near-black navy (#20262F, spread=15) or a
+ * beige-grey (#AEACA0, spread=14) technically aren't pure grayscale but read
+ * as neutral to a human eye; at a looser threshold they'd still plot on the
+ * wheel as if they were a real "Blue"/"Yellow" hue.
+ */
 export function hexToHue(hex: string): number | null {
   const clean = hex.replace("#", "");
   if (clean.length !== 6) return null;
@@ -8,7 +17,7 @@ export function hexToHue(hex: string): number | null {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   const delta = max - min;
-  if (delta < 0.04) return null;
+  if (delta < 0.12) return null;
   let hue: number;
   if (max === r) hue = ((g - b) / delta) % 6;
   else if (max === g) hue = (b - r) / delta + 2;

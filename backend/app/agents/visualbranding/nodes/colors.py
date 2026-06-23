@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 import structlog
 from openai import AsyncOpenAI
 
-from app.agents.visualbranding.alerts import diff_company_lists, diff_single_bucket
+from app.agents.visualbranding.alerts import diff_company_lists, diff_named_groups
 from app.agents.visualbranding.repositories.visualbranding_repository import (
     compute_fingerprint,
     get_latest_analysis,
@@ -34,6 +34,7 @@ from app.agents.visualbranding.state import (
     ColorSpectrum,
     HueGroup,
     VisualBrandingState,
+    WarmCoolEntry,
 )
 from app.config import get_settings
 
@@ -62,7 +63,17 @@ _HUE_FAMILIES: list[tuple[float, float, str]] = [
 # ---------------------------------------------------------------------------
 
 def _hex_to_hue(hex_code: str) -> float | None:
-    """Hue angle (0-360), or None for near-grayscale colors with no meaningful hue."""
+    """Hue angle (0-360), or None for near-grayscale colors with no meaningful hue.
+
+    Threshold is 0.12 (~30/255 channel spread), not just-barely-not-gray —
+    colors like a near-black navy (#20262F, spread=15) or a beige-grey
+    (#AEACA0, spread=14) technically aren't pure grayscale but read as
+    neutral to a human eye. At the old 0.04 threshold they still cleared the
+    bar and got clustered into a real hue family (e.g. "Blue"), which both
+    polluted that family's company count and skewed warm/cool voting — one
+    such barely-chromatic secondary color was enough to flip a company's
+    whole secondary-palette temperature in a 50/50 tie.
+    """
     clean = hex_code.lstrip("#")
     if len(clean) != 6:
         return None
@@ -72,7 +83,7 @@ def _hex_to_hue(hex_code: str) -> float | None:
         return None
     hi, lo = max(r, g, b), min(r, g, b)
     delta = hi - lo
-    if delta < 0.04:
+    if delta < 0.12:
         return None
     if hi == r:
         hue = ((g - b) / delta) % 6
@@ -84,8 +95,32 @@ def _hex_to_hue(hex_code: str) -> float | None:
     return hue if hue >= 0 else hue + 360
 
 
-def _hue_family(hue: float | None) -> str:
+def _lightness(hex_code: str) -> float | None:
+    """HSL lightness (0=black, 1=white), or None if not a valid 6-digit hex."""
+    clean = hex_code.lstrip("#")
+    if len(clean) != 6:
+        return None
+    try:
+        r, g, b = (int(clean[i : i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        return None
+    return (max(r, g, b) + min(r, g, b)) / 2
+
+
+def _hue_family(hue: float | None, hex_code: str | None = None) -> str:
+    """Grayscale colors (hue is None) used to all collapse into one generic
+    "Neutral" bucket — but a near-black and a near-white both read as
+    "neutral" by hue alone, even though they're visually and brand-wise very
+    different swatches (e.g. "we lean on black" vs. "we lean on white").
+    Split by lightness instead: only true mid-grays stay "Neutral"."""
     if hue is None:
+        lightness = _lightness(hex_code) if hex_code else None
+        if lightness is None:
+            return "Neutral"
+        if lightness < 0.35:
+            return "Black"
+        if lightness > 0.65:
+            return "White"
         return "Neutral"
     for lo, hi, name in _HUE_FAMILIES:
         if lo <= hue < hi:
@@ -127,15 +162,15 @@ async def _build_color_data() -> tuple[dict[str, dict[str, list[str]]], str]:
 def _cluster_hue_families(
     colors_by_domain: dict[str, dict[str, list[str]]],
 ) -> dict[str, set[str]]:
-    """{hue_family: {companies using it}} across every competitor's full palette."""
+    """{hue_family: {companies using it}} across every competitor's full
+    palette — includes "Neutral" (black/white/grey) as its own family so the
+    spectrum shows it too, not just the chromatic hues."""
     families: dict[str, set[str]] = {}
     for domain, palette in colors_by_domain.items():
         company = domain_to_company(domain)
         all_hexes = (palette.get("primary") or []) + (palette.get("secondary") or [])
         for hex_code in all_hexes:
-            family = _hue_family(_hex_to_hue(hex_code))
-            if family == "Neutral":
-                continue  # black/white/grey isn't a differentiating brand color
+            family = _hue_family(_hex_to_hue(hex_code), hex_code)
             families.setdefault(family, set()).add(company)
     return families
 
@@ -145,7 +180,7 @@ def _representative_hex(family: str, colors_by_domain: dict[str, dict[str, list[
     swatch; not trying to average/blend colors within a family."""
     for palette in colors_by_domain.values():
         for hex_code in (palette.get("primary") or []) + (palette.get("secondary") or []):
-            if _hue_family(_hex_to_hue(hex_code)) == family:
+            if _hue_family(_hex_to_hue(hex_code), hex_code) == family:
                 return hex_code
     return "#CCCCCC"
 
@@ -157,44 +192,60 @@ def _build_diversities(colors_by_domain: dict[str, dict[str, list[str]]]) -> lis
         all_hexes = (palette.get("primary") or []) + (palette.get("secondary") or [])
         hues: dict[str, list[str]] = {}
         for hex_code in all_hexes:
-            family = _hue_family(_hex_to_hue(hex_code))
+            family = _hue_family(_hex_to_hue(hex_code), hex_code)
             hues.setdefault(family, []).append(hex_code)
         diversities.append(
             ColorDiversity(
                 company=company,
                 count=len(hues),
                 hues=[HueGroup(hue_family=f, colors=cs) for f, cs in hues.items()],
+                secondary_hexes=palette.get("secondary") or [],
             )
         )
     return sorted(diversities, key=lambda d: d.count, reverse=True)
 
 
-def _build_warm_cool_neutral(
+def _classify_temperature(hexes: list[str]) -> str:
+    """Majority-vote warm/cool across a set of hexes; "neutral" if none of
+    them carry a meaningful hue (e.g. all black/white/grey, or the set is
+    empty)."""
+    votes = [v for v in (_is_warm(_hex_to_hue(h)) for h in hexes) if v is not None]
+    if not votes:
+        return "neutral"
+    return "warm" if sum(votes) >= len(votes) / 2 else "cool"
+
+
+def _build_warm_cool_breakdown(
     colors_by_domain: dict[str, dict[str, list[str]]],
-) -> tuple[list[str], list[str], list[str]]:
-    """Classify each company by its primary palette's dominant temperature."""
-    warm, cool, neutral = [], [], []
+) -> list[WarmCoolEntry]:
+    """Classify each company's temperature three ways — primary-only,
+    secondary-only, and the full combined palette — so the frontend can
+    filter the Warm vs. Cool card by color type without re-deriving hue math
+    client-side or a separate API round trip."""
+    breakdown: list[WarmCoolEntry] = []
     for domain, palette in colors_by_domain.items():
         company = domain_to_company(domain)
-        votes = [_is_warm(_hex_to_hue(h)) for h in (palette.get("primary") or [])]
-        votes = [v for v in votes if v is not None]
-        if not votes:
-            neutral.append(company)
-        elif sum(votes) >= len(votes) / 2:
-            warm.append(company)
-        else:
-            cool.append(company)
-    return warm, cool, neutral
+        primary_hexes = palette.get("primary") or []
+        secondary_hexes = palette.get("secondary") or []
+        breakdown.append(
+            WarmCoolEntry(
+                company=company,
+                primary=_classify_temperature(primary_hexes) if primary_hexes else None,
+                secondary=_classify_temperature(secondary_hexes) if secondary_hexes else None,
+                overall=_classify_temperature(primary_hexes + secondary_hexes),
+            )
+        )
+    return breakdown
 
 
 async def _describe_buckets(
-    buckets: dict[str, tuple[str, str, list[str]]],  # usage_label -> (family, hex, companies)
+    entries: list[tuple[str, str, str, list[str]]],  # (entry_key, family, hex, companies)
     openai: AsyncOpenAI,
 ) -> dict[str, str]:
-    """One combined LLM call: short brand/psychology association text per bucket."""
+    """One combined LLM call: short brand/psychology association text per
+    hue-family entry (each usage tier can hold several — see `run()`)."""
     prompt_rows = [
-        f'{label}: family="{family}", companies={companies}'
-        for label, (family, _, companies) in buckets.items()
+        f'{key}: family="{family}", companies={companies}' for key, family, _, companies in entries
     ]
     try:
         response = await openai.chat.completions.create(
@@ -203,10 +254,10 @@ async def _describe_buckets(
                 {
                     "role": "system",
                     "content": (
-                        "For each color-usage bucket below, write one short sentence (max 20 "
+                        "For each color-usage entry below, write one short sentence (max 20 "
                         "words) on the brand/psychological association of that hue family in "
                         "this competitive set. Return JSON: "
-                        '{"<label>": "<sentence>", ...} for every label given.'
+                        '{"<key>": "<sentence>", ...} for every key given.'
                     ),
                 },
                 {"role": "user", "content": "\n".join(prompt_rows)},
@@ -217,8 +268,8 @@ async def _describe_buckets(
     except Exception as exc:
         logger.warning("colors_description_failed", error=str(exc))
         return {
-            label: f"{family} is used by {len(companies)} tracked competitor(s)."
-            for label, (family, _, companies) in buckets.items()
+            key: f"{family} is used by {len(companies)} tracked competitor(s)."
+            for key, family, _, companies in entries
         }
 
 
@@ -241,40 +292,65 @@ async def run(state: VisualBrandingState) -> dict:
 
     # Rank hue families by how many distinct companies use them — frequency
     # as a proxy for "real differentiator" (same logic the research node's
-    # own CSS color ranking already uses).
+    # own CSS color ranking already uses). Bucket by *absolute* company count
+    # rather than picking one fixed index per tier — otherwise a family like
+    # "Red" can rank 2nd/3rd most popular and never appear anywhere in the
+    # spectrum just because only 4 indices were sampled.
+    #
+    # These thresholds are for the *combined* (primary+secondary) palette —
+    # i.e. the frontend's "all" filter — and are deliberately higher than the
+    # primary-only/secondary-only thresholds the frontend applies client-side
+    # (ColorComparison.tsx's `usageLabelForFiltered`, 3=common/>3=very_common).
+    # A color counted under "all" qualifies by being used as *either* role, so
+    # its company count is naturally larger than either role counted alone —
+    # using the same low thresholds here would make almost everything
+    # "very_common" and collapse the spectrum's lower tiers to empty.
     ranked = sorted(families.items(), key=lambda kv: len(kv[1]), reverse=True)
-    n = len(ranked)
-    bucket_idx = {
-        "very_common": 0,
-        "common": min(1, n - 1),
-        "occasional": min(max(n // 2, 2), n - 1),
-        "rare": n - 1,
+
+    def _usage_label(company_count: int) -> str:
+        if company_count > 6:
+            return "very_common"
+        if company_count >= 5:
+            return "common"
+        if company_count >= 3:
+            return "occasional"
+        return "rare"
+
+    grouped: dict[str, list[tuple[str, str, list[str]]]] = {
+        "very_common": [], "common": [], "occasional": [], "rare": []
     }
-    buckets: dict[str, tuple[str, str, list[str]]] = {
-        label: (
-            ranked[idx][0],
-            _representative_hex(ranked[idx][0], colors_by_domain),
-            sorted(ranked[idx][1]),
-        )
-        for label, idx in bucket_idx.items()
-    }
+    for family, companies in ranked:
+        label = _usage_label(len(companies))
+        grouped[label].append((family, _representative_hex(family, colors_by_domain), sorted(companies)))
+
+    entries = [
+        (f"{label}:{family}", family, hex_code, companies)
+        for label, items in grouped.items()
+        for family, hex_code, companies in items
+    ]
 
     openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
-    descriptions = await _describe_buckets(buckets, openai)
+    descriptions = await _describe_buckets(entries, openai)
 
-    spectrum = {
-        label: ColorSpectrum(
-            type=family,
-            color=hex_code,
-            companies=companies,
-            description=descriptions.get(
-                label, f"{family} is used by {len(companies)} tracked competitor(s)."
-            ),
-        )
-        for label, (family, hex_code, companies) in buckets.items()
+    spectrum: dict[str, list[ColorSpectrum]] = {
+        label: [
+            ColorSpectrum(
+                type=family,
+                color=hex_code,
+                companies=companies,
+                description=descriptions.get(
+                    f"{label}:{family}", f"{family} is used by {len(companies)} tracked competitor(s)."
+                ),
+            )
+            for family, hex_code, companies in items
+        ]
+        for label, items in grouped.items()
     }
 
-    warm, cool, neutral = _build_warm_cool_neutral(colors_by_domain)
+    warm_cool_breakdown = _build_warm_cool_breakdown(colors_by_domain)
+    warm = sorted(e.company for e in warm_cool_breakdown if e.overall == "warm")
+    cool = sorted(e.company for e in warm_cool_breakdown if e.overall == "cool")
+    neutral = sorted(e.company for e in warm_cool_breakdown if e.overall == "neutral")
 
     analysis = ColorAnalysis(
         very_common=spectrum["very_common"],
@@ -282,6 +358,7 @@ async def run(state: VisualBrandingState) -> dict:
         occasional=spectrum["occasional"],
         rare=spectrum["rare"],
         diversities=_build_diversities(colors_by_domain),
+        warm_cool_breakdown=warm_cool_breakdown,
         warm=warm,
         cold=cool,
         neutral=neutral,
@@ -299,9 +376,7 @@ async def run(state: VisualBrandingState) -> dict:
             ("Occasional color", "occasional"),
             ("Rare color", "rare"),
         ):
-            fragment = diff_single_bucket(label, previous.get(key), getattr(analysis, key), name_field="type")
-            if fragment:
-                alerts.append(fragment)
+            alerts += diff_named_groups(label, previous.get(key), getattr(analysis, key), name_field="type")
         for label, key in (("Warm companies", "warm"), ("Cold companies", "cold"), ("Neutral companies", "neutral")):
             fragment = diff_company_lists(label, previous.get(key), getattr(analysis, key))
             if fragment:
@@ -314,7 +389,7 @@ async def run(state: VisualBrandingState) -> dict:
     except Exception as exc:
         logger.error("visualbranding_colors_persist_failed", error=str(exc))
 
-    logger.info("visualbranding_colors_done", families=n, competitors=len(colors_by_domain), alerts=len(alerts))
+    logger.info("visualbranding_colors_done", families=len(ranked), competitors=len(colors_by_domain), alerts=len(alerts))
     return {"colors": analysis, "color_alerts": alerts, "completed_nodes": ["colors"]}
 
 

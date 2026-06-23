@@ -1,6 +1,6 @@
 "use client";
 
-import { Palette, Type, Aperture, Image as ImageIcon, Video, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { Palette, Type, Aperture, Image as ImageIcon, ArrowUp, ArrowDown, Minus } from "lucide-react";
 
 import DashboardCard from "@components/geo/DashboardCard";
 import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
@@ -12,29 +12,26 @@ const ELEMENT_ICONS: Record<VisualElementTrend["element"], React.ReactNode> = {
   Font: <Type size={16} />,
   Logo: <Aperture size={16} />,
   Imagery: <ImageIcon size={16} />,
-  Video: <Video size={16} />,
 };
 
-const DIRECTION_STYLE: Record<TrendDirection, { icon: React.ReactNode; label: string; className: string }> = {
-  up: { icon: <ArrowUp size={12} strokeWidth={2.5} />, label: "Trending up", className: "text-success" },
-  down: { icon: <ArrowDown size={12} strokeWidth={2.5} />, label: "Trending down", className: "text-error" },
-  flat: { icon: <Minus size={12} strokeWidth={2.5} />, label: "Steady", className: "text-neutral-grey-20" },
-};
 
 function TrendCard({ trend }: { trend: VisualElementTrend }) {
-  const direction = DIRECTION_STYLE[trend.direction];
   return (
     <DashboardCard className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-sm font-medium text-primary-white">
+        <span className="flex items-center gap-2 text-sm font-medium text-neutral-grey-20">
           <span className="text-neutral-grey-20">{ELEMENT_ICONS[trend.element]}</span>
           {trend.element}
         </span>
-        <span className={`flex items-center gap-1 text-xs font-medium ${direction.className}`}>
-          {direction.icon}
-          {direction.label}
-        </span>
       </div>
+      {trend.headline && (
+        <div className="flex flex-col gap-2">
+          <span className="text-4xl font-medium tracking-tight text-primary-white truncate">{trend.headline}</span>
+          {trend.headlineDetail && (
+            <span className="text-xs text-neutral-grey-20">{trend.headlineDetail}</span>
+          )}
+        </div>
+      )}
       <p className="text-xs text-neutral-grey-20 leading-relaxed">{trend.summary}</p>
     </DashboardCard>
   );

@@ -10,16 +10,22 @@ silently skipping runs it shouldn't (or running ones it doesn't need to).
 """
 
 from app.agents.research.repositories.research_repository import get_latest_snapshot
-from app.agents.shared.competitors import get_competitor_domains
+from app.agents.shared.competitors import get_competitor_names
 
 VISUALS_NODE = "visuals"
+
+# Populated by get_latest_visuals_by_domain() (called once at the start of
+# every node's run()) so the later, plain-sync domain_to_company() calls
+# throughout that same run can look up the real name instead of guessing.
+_company_names: dict[str, str] = {}
 
 
 async def get_latest_visuals_by_domain() -> dict[str, dict]:
     """{domain: latest VisualsData payload} for every active competitor (+ Celonis)."""
-    domains = await get_competitor_domains()
+    global _company_names
+    _company_names = await get_competitor_names()
     result: dict[str, dict] = {}
-    for domain in domains:
+    for domain in _company_names:
         snapshot = get_latest_snapshot(domain, VISUALS_NODE)
         if snapshot:
             result[domain] = snapshot
@@ -39,9 +45,12 @@ def extract_dimension(visuals_by_domain: dict[str, dict], dimension: str) -> dic
 
 
 def domain_to_company(domain: str) -> str:
-    """e.g. "celonis.com" -> "Celonis" — same convention used throughout the
-    research/brand agents (geo_intelligence_node, research/nodes/visuals.py)."""
-    return domain.split(".")[0].capitalize()
+    """e.g. "ibm.com" -> "IBM", "uipath.com" -> "UiPath" — the real display
+    name from the competitors table (populated by get_latest_visuals_by_domain,
+    which every node calls first). Falls back to a naive
+    domain.split(".")[0].capitalize() guess only if the domain isn't in that
+    cache (e.g. called before any node has fetched it, or in a test)."""
+    return _company_names.get(domain) or domain.split(".")[0].capitalize()
 
 
 # OpenAI's vision input only accepts these raster formats — notably not SVG,

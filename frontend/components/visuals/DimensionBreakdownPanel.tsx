@@ -5,7 +5,7 @@ import { useState } from "react";
 import DashboardCard from "@components/geo/DashboardCard";
 import type { DimensionCategory } from "@/lib/branding/types";
 import { CompanyChip } from "./CompanyChip";
-import { CompanyLogoDropdown } from "./CompanyLogoDropdown";
+import { ExampleImageRow } from "./ExampleImageRow";
 
 type Dimension = {
   key: string;
@@ -16,12 +16,14 @@ type Dimension = {
 function CategoryBar({
   category,
   max,
-  logoUrls,
+  previewUrls,
+  previewNoun,
 }: {
   category: DimensionCategory;
   max: number;
-  /** Only passed by logo dimensions — lets each bucket preview the actual logo behind a company. */
-  logoUrls?: Record<string, string>;
+  /** Lets each bucket preview the actual logo/image behind a company. */
+  previewUrls?: Record<string, string[]>;
+  previewNoun?: string;
 }) {
   const width = max > 0 ? (category.pct / max) * 100 : 0;
   return (
@@ -40,7 +42,9 @@ function CategoryBar({
               <CompanyChip key={c} company={c} />
             ))}
           </div>
-          {logoUrls && <CompanyLogoDropdown companies={category.companies} logoUrls={logoUrls} />}
+          {previewUrls && (
+            <ExampleImageRow companies={category.companies} imageUrls={previewUrls} noun={previewNoun} />
+          )}
         </div>
       )}
     </div>
@@ -57,13 +61,15 @@ export function DimensionBreakdownPanel({
   label,
   sublabel,
   dimensions,
-  logoUrls,
+  previewUrls,
+  previewNoun,
 }: {
   label: string;
   sublabel: string;
   dimensions: Dimension[];
-  /** Only passed by logo dimensions — lets each bucket preview the actual logo behind a company. */
-  logoUrls?: Record<string, string>;
+  /** Lets each bucket preview the actual logo/image behind a company. */
+  previewUrls?: Record<string, string[]>;
+  previewNoun?: string;
 }) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const active = dimensions.find((d) => d.key === activeKey) ?? dimensions[0];
@@ -90,7 +96,13 @@ export function DimensionBreakdownPanel({
         </div>
         <div className="flex flex-col">
           {active.categories.map((category) => (
-            <CategoryBar key={category.category} category={category} max={max} logoUrls={logoUrls} />
+            <CategoryBar
+              key={category.category}
+              category={category}
+              max={max}
+              previewUrls={previewUrls}
+              previewNoun={previewNoun}
+            />
           ))}
         </div>
       </div>

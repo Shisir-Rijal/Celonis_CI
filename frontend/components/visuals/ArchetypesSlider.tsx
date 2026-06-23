@@ -4,13 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import { ZoneSkeleton, ZoneError, ZoneEmpty } from "@components/geo/ZoneState";
-import { useBrandArchetypes } from "@/lib/branding/hooks";
+import { useBrandArchetypes, useFixedBrandArchetypes } from "@/lib/branding/hooks";
 import { ArchetypeCard } from "./ArchetypeCard";
+import type { BrandArchetypes } from "@/lib/branding/types";
 
 const TRACK_GAP_PX = 16; // matches the track's gap-4
 
-export function ArchetypesSlider() {
-  const { data, isLoading, isError, error } = useBrandArchetypes();
+type ArchetypesSliderViewProps = {
+  data: BrandArchetypes | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  emptyMessage: string;
+};
+
+function ArchetypesSliderView({ data, isLoading, isError, error, emptyMessage }: ArchetypesSliderViewProps) {
   const [index, setIndex] = useState(0);
   const [offsetPx, setOffsetPx] = useState(0);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -35,7 +43,7 @@ export function ArchetypesSlider() {
   }
   if (isError) return <ZoneError message={(error as Error)?.message} />;
   if (!data || data.archetypes.length === 0) {
-    return <ZoneEmpty message="No brand archetype analysis available yet." />;
+    return <ZoneEmpty message={emptyMessage} />;
   }
 
   const canPrev = index > 0;
@@ -50,7 +58,7 @@ export function ArchetypesSlider() {
         >
           {data.archetypes.map((archetype, i) => (
             <div
-              key={archetype.name}
+              key={`${archetype.name}-${i}`}
               ref={(el) => {
                 cardRefs.current[i] = el;
               }}
@@ -66,7 +74,7 @@ export function ArchetypesSlider() {
           <div className="flex items-center gap-1.5 flex-1">
             {data.archetypes.map((archetype, i) => (
               <button
-                key={archetype.name}
+                key={`${archetype.name}-${i}`}
                 type="button"
                 onClick={() => setIndex(i)}
                 aria-label={`Go to ${archetype.name}`}
@@ -83,22 +91,51 @@ export function ArchetypesSlider() {
               onClick={() => setIndex((v) => Math.max(0, v - 1))}
               disabled={!canPrev}
               aria-label="Previous archetype"
-              className="w-8 h-8 rounded-full border border-white/15 flex items-center justify-center text-neutral-grey-10 hover:border-white/30 hover:text-primary-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-grey-10 hover:border-white/30 hover:text-primary-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
             >
-              <ArrowLeft size={14} />
+              <ArrowLeft size={20} />
             </button>
             <button
               type="button"
               onClick={() => setIndex((v) => Math.min(count - 1, v + 1))}
               disabled={!canNext}
               aria-label="Next archetype"
-              className="w-8 h-8 rounded-full border border-white/15 flex items-center justify-center text-neutral-grey-10 hover:border-white/30 hover:text-primary-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-grey-10 hover:border-white/30 hover:text-primary-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
             >
-              <ArrowRight size={14} />
+              <ArrowRight size={20} />
             </button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+/** Freely LLM-named brand-identity clusters (backend/.../nodes/archetypes.py). */
+export function ArchetypesSlider() {
+  const { data, isLoading, isError, error } = useBrandArchetypes();
+  return (
+    <ArchetypesSliderView
+      data={data}
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      emptyMessage="No brand archetype analysis available yet."
+    />
+  );
+}
+
+/** Closed-set classification into the 12 Mark & Pearson marketing archetypes
+ * (backend/.../nodes/fixed_archetypes.py) — stable names across runs. */
+export function FixedArchetypesSlider() {
+  const { data, isLoading, isError, error } = useFixedBrandArchetypes();
+  return (
+    <ArchetypesSliderView
+      data={data}
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      emptyMessage="No fixed archetype analysis available yet."
+    />
   );
 }

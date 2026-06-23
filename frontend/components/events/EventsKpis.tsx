@@ -22,8 +22,8 @@ export default function EventsKpis() {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-2 gap-4">
-        {Array.from({ length: 3 }).map((_, i) => <ZoneSkeleton key={i} height={150} />)}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => <ZoneSkeleton key={i} height={150} />)}
       </div>
     );
   }
@@ -31,15 +31,24 @@ export default function EventsKpis() {
   if (isError) return <ZoneError message={(error as Error)?.message} />;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Trending Topic */}
       <DashboardCard className="flex flex-col gap-2">
         <span className="text-[11px] tracking-[0.16em] uppercase text-neutral-grey-20 font-medium">
           Trending topic
         </span>
-        <span className="text-[44px] leading-none font-medium tracking-tight text-primary-white">
-          {analysis?.total ?? "—"}
-        </span>
+        {analysis?.topTrendingTopic ? (
+          <>
+            <span className="text-[28px] leading-tight font-medium tracking-tight text-primary-white truncate">
+              {analysis.topTrendingTopic.topic}
+            </span>
+            <span className="text-xs text-neutral-grey-20">
+              {analysis.topTrendingTopic.count} event{analysis.topTrendingTopic.count !== 1 ? "s" : ""}
+            </span>
+          </>
+        ) : (
+          <span className="text-[44px] leading-none font-medium text-primary-white">—</span>
+        )}
         <span className="text-xs text-neutral-grey-20">Over the last 3 months</span>
       </DashboardCard>
 
@@ -60,11 +69,16 @@ export default function EventsKpis() {
         <span className="text-[11px] tracking-[0.16em] uppercase text-neutral-grey-20 font-medium">
           Celonis event share
         </span>
-        <div className="flex items-baseline gap-1">
-          <span className="text-[44px] leading-none font-medium tracking-tight text-primary-white">
-            {analysis ? analysis.celonisShare.toFixed(1) : "—"}
+        <div className="flex items-baseline gap-3">
+          <div className="gap-1">
+            <span className="text-[44px] leading-none font-medium tracking-tight text-primary-white">
+              {analysis ? analysis.celonisShare.toFixed(1) : "—"}
+            </span>
+            {analysis && <span className="text-lg text-neutral-grey-20 font-normal">%</span>}
+          </div>
+          <span className="text-sm text-neutral-grey-20">
+            from 13 companies
           </span>
-          {analysis && <span className="text-lg text-neutral-grey-20 font-normal">%</span>}
         </div>
         <span className="text-xs text-neutral-grey-20">
           {analysis?.celonisCount ?? 0} of {analysis?.total ?? 0} events

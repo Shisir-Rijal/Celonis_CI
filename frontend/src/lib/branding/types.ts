@@ -11,13 +11,19 @@
 // company group, not gated to a single visual dimension)
 // ---------------------------------------------------------------------------
 
+export type ArchetypeTrait = {
+  /** e.g. "Color", "Typography", "Logo", "Imagery", "Video". */
+  topic: string;
+  description: string;
+};
+
 export type BrandArchetype = {
   name: string;
   /** Short single-word vibe descriptors, e.g. ["Bold", "Technical", "Disruptive"]. */
   keywords: string[];
   vibe: string;
-  typography: string;
-  coloring: string;
+  /** Per-topic breakdown of how this archetype looks — only topics with data are included. */
+  traits: ArchetypeTrait[];
   /** Representative image URL, or null if nothing scraped yet for this archetype. */
   image: string | null;
   /** Can be a single company — not every archetype needs 2+ members. */
@@ -26,6 +32,21 @@ export type BrandArchetype = {
 
 export type BrandArchetypes = {
   archetypes: BrandArchetype[];
+  generatedAt: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Fixed brand archetypes — same shape as BrandArchetype above, but every
+// company is classified into one of the 12 fixed Mark & Pearson marketing
+// archetypes (Innocent, Sage, Explorer, Outlaw, Magician, Hero, Lover,
+// Jester, Everyman, Caregiver, Ruler, Creator) instead of a freely
+// LLM-invented cluster name — stable, recognizable vocabulary across runs.
+// ---------------------------------------------------------------------------
+
+export type FixedBrandArchetype = BrandArchetype;
+
+export type FixedBrandArchetypes = {
+  archetypes: FixedBrandArchetype[];
   generatedAt: string | null;
 };
 
@@ -66,6 +87,8 @@ export type CompetitorColorDiversity = {
   company: string;
   /** This competitor's palette, grouped by distinct hue family. `hues.length` = diversity count. */
   hues: CompetitorHueGroup[];
+  /** This competitor's secondary hex codes — lets the UI filter `hues` down to primary-only or secondary-only. */
+  secondaryHexes: string[];
 };
 
 export type WarmCoolSplit = {
@@ -77,11 +100,25 @@ export type WarmCoolSplit = {
   neutralCompanies: string[];
 };
 
+export type Temperature = "warm" | "cool" | "neutral";
+
+export type WarmCoolBreakdownEntry = {
+  company: string;
+  /** null if this company has no primary colors scraped at all. */
+  primary: Temperature | null;
+  /** null if this company has no secondary colors scraped at all. */
+  secondary: Temperature | null;
+  /** From the combined primary+secondary palette. */
+  overall: Temperature;
+};
+
 export type ColorInsights = {
   /** All hue families, any usage label — group by `usageLabel` to render the 4-column spectrum. */
   spectrum: ColorSpectrumEntry[];
   diversity: CompetitorColorDiversity[]; // sorted most -> least diverse
   warmCoolSplit: WarmCoolSplit;
+  /** Per-company warm/cool/neutral by color type — filter the Warm vs. Cool card with this. */
+  warmCoolBreakdown: WarmCoolBreakdownEntry[];
   /** When the branding agent last produced this analysis, or null if never run. */
   generatedAt: string | null;
 };
@@ -107,7 +144,7 @@ export type FontArchetype = {
   companies: string[];
 };
 
-export type FontDimensionKey = "classification" | "weight_emphasis" | "personality";
+export type FontDimensionKey = "classification" | "weight_emphasis" | "size_emphasis" | "personality";
 
 export type FontDimension = {
   key: FontDimensionKey;
@@ -115,10 +152,19 @@ export type FontDimension = {
   categories: DimensionCategory[];
 };
 
+export type FontUsageEntry = {
+  company: string;
+  /** Distinct font *families* in use — script/language variants of the same family
+   * (e.g. "IBM Plex Sans" + "IBM Plex Sans Arabic") are normalized and counted once. */
+  distinctFontCount: number;
+  fontFamilies: string[];
+};
+
 export type FontInsights = {
   similarFonts: SimilarFontGroup[];
   archetypes: FontArchetype[];
   dimensions: FontDimension[];
+  usage: FontUsageEntry[];
   generatedAt: string | null;
 };
 
@@ -131,7 +177,6 @@ export type BrandingAlerts = {
   font: string[] | null;
   logo: string[] | null;
   image: string[] | null;
-  video: string[] | null;
   trend: string[] | null;
 };
 
@@ -142,10 +187,14 @@ export type BrandingAlerts = {
 export type TrendDirection = "up" | "down" | "flat";
 
 export type VisualElementTrend = {
-  element: "Color" | "Font" | "Logo" | "Imagery" | "Video";
+  element: "Color" | "Font" | "Logo" | "Imagery";
   direction: TrendDirection;
   /** Short agent-generated note on where this element is trending and why. */
   summary: string;
+  /** The single most common trait for this element, e.g. "Blue", "Rounded", "Sans-serif". */
+  headline: string | null;
+  /** How many competitors share `headline`, and any change since the last run. */
+  headlineDetail: string | null;
 };
 
 export type VisualTrends = {
@@ -194,6 +243,8 @@ export type ImageryDimension = {
 
 export type ImageryDimensionBreakdown = {
   dimensions: ImageryDimension[];
+  /** {company: sample image URLs the classifier looked at} — lets the UI preview the actual basis for a company's classification. */
+  imageSamples: Record<string, string[]>;
   generatedAt: string | null;
 };
 
@@ -207,11 +258,24 @@ export type ImagerySimilarityNode = {
   imageCount: number;
 };
 
+export type ImagerySimilaritySharedTrait = {
+  /** e.g. "Style", "Color Scheme". */
+  dimension: string;
+  /** e.g. "Illustration", "Brand-colored". */
+  value: string;
+};
+
 export type ImagerySimilarityLink = {
   source: string;
   target: string;
   /** 0-1 similarity score across style/effect/subject/look & feel/color scheme. */
   similarity: number;
+  /** Which dimensions matched and on what value — the "why" behind the score. */
+  sharedTraits: ImagerySimilaritySharedTrait[];
+  /** A few of source's analyzed images, for a visual side-by-side. */
+  sampleImagesA: string[];
+  /** A few of target's analyzed images, for a visual side-by-side. */
+  sampleImagesB: string[];
 };
 
 export type ImagerySimilarity = {
