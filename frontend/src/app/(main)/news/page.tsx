@@ -10,6 +10,7 @@ import CompanyChipFilter from "@components/news/CompanyChipFilter";
 import NewsArticleCard from "@components/news/NewsArticleCard";
 import { useNewsList } from "@/lib/news/hooks";
 import { groupAndSortArticles } from "@/lib/news/groupArticles";
+import ExportButton from "@components/report/ExportButton";
 
 function parseCompanies(param: string | null): string[] {
   if (!param) return [];
@@ -36,11 +37,7 @@ export default function NewsPage() {
     [searchParams]
   );
 
-  // Filtered data — drives the article grid
   const { data, isLoading, isError, error } = useNewsList(selected);
-
-  // Unfiltered data — drives the chip filter options, so they never
-  // disappear when the user narrows the selection
   const { data: allData } = useNewsList([]);
 
   function handleFilterChange(next: string[]) {
@@ -64,8 +61,9 @@ export default function NewsPage() {
 
   const mostRecentRunAt = useMemo(() => {
     if (!data || data.companies.length === 0) return undefined;
-    return data.companies.reduce((latest, c) =>
-      new Date(c.run_at) > new Date(latest) ? c.run_at : latest,
+    return data.companies.reduce(
+      (latest, c) =>
+        new Date(c.run_at) > new Date(latest) ? c.run_at : latest,
       data.companies[0].run_at
     );
   }, [data]);
@@ -87,7 +85,12 @@ export default function NewsPage() {
             Latest articles and press coverage across tracked competitors.
           </p>
         </div>
-        <PageToolbar runtime="Daily" updatedAt={formatRelativeTime(mostRecentRunAt)} />
+        
+          <PageToolbar
+            runtime="Daily"
+            updatedAt={formatRelativeTime(mostRecentRunAt)}
+          />
+        
       </header>
 
       {/* ============================================================== */}
@@ -124,46 +127,46 @@ export default function NewsPage() {
           data &&
           [...data.companies]
             .sort((a, b) => {
-                if (selected.length === 0) {
-                    return a.name.localeCompare(b.name);
-                }
-                const aIndex = selected.indexOf(a.company);
-                const bIndex = selected.indexOf(b.company);
-                return aIndex - bIndex;
-            }) 
-            .map((companyNews)=> (
-            <div key={companyNews.company} className="flex flex-col gap-6">
-              <SectionHeader
-                label={companyNews.name}
-                description={`${companyNews.article_count} articles · updated ${formatRelativeTime(
-                  companyNews.run_at
-                )}`}
-              />
+              if (selected.length === 0) {
+                return a.name.localeCompare(b.name);
+              }
+              const aIndex = selected.indexOf(a.company);
+              const bIndex = selected.indexOf(b.company);
+              return aIndex - bIndex;
+            })
+            .map((companyNews) => (
+              <div key={companyNews.company} className="flex flex-col gap-6">
+                <SectionHeader
+                  label={companyNews.name}
+                  description={`${companyNews.article_count} articles · updated ${formatRelativeTime(
+                    companyNews.run_at
+                  )}`}
+                />
 
-              {companyNews.articles.length === 0 ? (
-                <ZoneEmpty message="No articles found." />
-              ) : (
-                groupAndSortArticles(companyNews.articles).map((group) => (
-                  <div key={group.sourceType} className="flex flex-col gap-3">
-                    <span className="text-[11px] tracking-widest uppercase font-medium text-neutral-grey-20">
-                      {group.label}
-                    </span>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {group.articles.map((article, idx) => (
-                        <NewsArticleCard
-                          key={`${companyNews.company}-${group.sourceType}-${idx}`}
-                          article={article}
-                          company={companyNews.company}
-                          companyName={companyNews.name}
-                          allCompanies={allDomains}
-                        />
-                      ))}
+                {companyNews.articles.length === 0 ? (
+                  <ZoneEmpty message="No articles found." />
+                ) : (
+                  groupAndSortArticles(companyNews.articles).map((group) => (
+                    <div key={group.sourceType} className="flex flex-col gap-3">
+                      <span className="text-[11px] tracking-widest uppercase font-medium text-neutral-grey-20">
+                        {group.label}
+                      </span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {group.articles.map((article, idx) => (
+                          <NewsArticleCard
+                            key={`${companyNews.company}-${group.sourceType}-${idx}`}
+                            article={article}
+                            company={companyNews.company}
+                            companyName={companyNews.name}
+                            allCompanies={allDomains}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          ))}
+                  ))
+                )}
+              </div>
+            ))}
       </section>
     </div>
   );

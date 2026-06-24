@@ -2,18 +2,33 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { usePathname, useSearchParams } from "next/navigation";
 import NavButton from "./NavButton";
 import MobileMenu from "./MobileMenu";
 import { Menu } from "lucide-react";
+import ExportButton from "@components/report/ExportButton";
+
+const TOPIC_MAP: Record<string, "news" | "events" | "geo" | "branding"> = {
+  "/news": "news",
+  "/events": "events",
+  "/brand/geo-intelligence": "geo",
+  "/branding": "branding",
+};
 
 export default function NavBar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const topic = TOPIC_MAP[pathname] ?? null;
+
+  const companies = topic && searchParams.get("companies")
+    ? searchParams.get("companies")!.split(",").filter(Boolean)
+    : [];
 
   return (
     <>
-      {/* Desktop topbar — visible on lg+ */}
       <nav className="hidden lg:flex flex-row items-center bg-primary-black text-primary-white h-16 px-16 fixed top-0 left-0 right-0 z-20">
-        {/* Logo left */}
         <div className="flex-shrink-0">
           <Image
             src="/celonis_logo.png"
@@ -24,7 +39,6 @@ export default function NavBar() {
           />
         </div>
 
-        {/* Nav links center */}
         <div className="flex flex-row flex-1 justify-center gap-2">
           <NavButton text="Home" href="/" />
           <NavButton text="Branding" href="/branding" />
@@ -35,13 +49,20 @@ export default function NavBar() {
           <NavButton text="Settings" href="/settings" />
         </div>
 
-        {/* Export button right */}
-        <button className="bg-secondary-green text-primary-black px-4 py-2 text-sm font-medium rounded-sm cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0">
-          Export
-        </button>
+        {topic ? (
+          <div className="bg-secondary-green text-primary-black px-4 py-2 text-sm font-medium rounded-sm flex-shrink-0">
+            <ExportButton topic={topic} companies={companies} />
+          </div>
+        ) : (
+          <button
+            disabled
+            className="bg-secondary-green text-primary-black px-4 py-2 text-sm font-medium rounded-sm opacity-40 cursor-not-allowed flex-shrink-0"
+          >
+            Report ↗
+          </button>
+        )}
       </nav>
 
-      {/* Mobile topbar — visible on md and below */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between bg-primary-black text-primary-white px-4 py-3">
         <Image
           src="/celonis_logo.png"
@@ -60,7 +81,6 @@ export default function NavBar() {
         </button>
       </header>
 
-      {/* Mobile slide-in menu */}
       <MobileMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
     </>
   );
