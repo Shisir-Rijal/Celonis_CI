@@ -71,3 +71,5 @@ logs/
 # ===== TypeScript =====
 *.tsbuildinfo
 reviews/
+
+backend/run_all_news.py
