@@ -11,6 +11,7 @@ export interface NewsArticle {
   author: string | null;
   published_date: string | null;
   source_type: string | null;
+  topic: string[];
 }
 
 export interface CompanyNews {
