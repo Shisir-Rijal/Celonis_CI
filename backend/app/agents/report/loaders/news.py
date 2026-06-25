@@ -1,7 +1,12 @@
 """News report data loader.
 
 Reads research_snapshots where node='news', returns the latest article
-list per company — mirrors GET /news but simplified for report generation.
+list per company — mirrors GET /news but shaped for report generation.
+
+Articles are sorted by source reliability: firecrawl (official) first,
+finnhub (financial) second, serper (media) third.
+Topic tags are included to allow the prompt to surface thematic patterns
+across competitors.
 """
 
 import structlog
@@ -9,6 +14,8 @@ from app.rag.supabase_client import get_supabase
 from .base import BaseReportLoader
 
 logger = structlog.get_logger(__name__)
+
+SOURCE_PRIORITY = {"firecrawl": 0, "finnhub": 1, "serper": 2}
 
 
 class NewsReportLoader(BaseReportLoader):
@@ -46,17 +53,33 @@ class NewsReportLoader(BaseReportLoader):
         companies_data = []
         for domain, row in latest.items():
             articles = row["data"].get("news", [])
+
+            # Sort by source reliability: firecrawl > finnhub > serper
+            articles = sorted(
+                articles,
+                key=lambda a: SOURCE_PRIORITY.get(a.get("source_type", ""), 99),
+            )
+
+            # Build topic summary: which topics appear and how often
+            topic_counts: dict[str, int] = {}
+            for a in articles:
+                for t in (a.get("topic") or []):
+                    if t and t != "news":
+                        topic_counts[t] = topic_counts.get(t, 0) + 1
+
             companies_data.append({
                 "company": name_by_domain.get(domain, domain),
                 "domain": domain,
                 "run_at": str(row["run_at"]),
                 "article_count": len(articles),
+                "topic_summary": topic_counts,
                 "articles": [
                     {
                         "title": a.get("title") or a.get("heading"),
                         "summary": a.get("summary"),
                         "published_date": a.get("published_date"),
                         "source_type": a.get("source_type"),
+                        "topics": [t for t in (a.get("topic") or []) if t != "news"],
                         "url": a.get("url"),
                     }
                     for a in articles[:20]
