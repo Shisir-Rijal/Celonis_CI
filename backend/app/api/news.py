@@ -36,6 +36,7 @@ class NewsArticle(BaseModel):
     author: str | None
     published_date: str | None
     source_type: str | None
+    topic: list[str] = []
 
 
 class CompanyNews(BaseModel):
@@ -71,6 +72,7 @@ def _row_to_company_news(row: dict, name: str) -> CompanyNews:
             author=item.get("author"),
             published_date=item.get("published_date"),
             source_type=item.get("source_type"),
+            topic=item.get("topic", []),
         )
         for item in items
     ]

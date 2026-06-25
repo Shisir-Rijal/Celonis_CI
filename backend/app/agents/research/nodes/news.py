@@ -21,6 +21,18 @@ settings = get_settings()
 logger = structlog.get_logger(__name__)
 today = date.today().strftime("%Y-%m-%d")
 
+TOPIC_LABELS = [
+    "Product Launch",
+    "Partnership",
+    "Funding & M&A",
+    "AI & Technology",
+    "Financial Results",
+    "Leadership",
+    "Market Expansion",
+    "Legal & Regulatory",
+    "Awards & Recognition",
+]
+
 
 # --- Quelle 1: Finnhub ---
 
@@ -138,7 +150,6 @@ async def _get_firecrawl_news(domain: str, company: str) -> list[NewsItem]:
     app = FirecrawlApp(api_key=get_settings().FIRECRAWL_API_KEY)
     openai = AsyncOpenAI(api_key=get_settings().OPENAI_API_KEY)
 
-    # Step 1: scrape the listing page to extract individual article URLs
     listing = await asyncio.to_thread(app.scrape_url, results[0]["link"], formats=["markdown"])
     if not getattr(listing, "markdown", None):
         return []
@@ -159,7 +170,6 @@ async def _get_firecrawl_news(domain: str, company: str) -> list[NewsItem]:
     if not urls:
         return []
 
-    # Step 2: scrape each article for full text
     async def _scrape_article(url: str) -> NewsItem | None:
         try:
             scraped = await asyncio.to_thread(app.scrape_url, url, formats=["markdown"])
@@ -197,6 +207,61 @@ async def _get_firecrawl_news(domain: str, company: str) -> list[NewsItem]:
     scraped = await asyncio.gather(*[_scrape_article(u) for u in urls[:5]])
     return [r for r in scraped if r is not None]
 
+
+# --- Topic classification ---
+
+async def _classify_topics(items: list[NewsItem]) -> list[NewsItem]:
+    """Batch-classify topics for all news items using GPT-4o-mini."""
+    if not items:
+        return items
+
+    openai = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+    articles_input = [
+        {
+            "id": i,
+            "heading": item.heading or item.title or "",
+            "summary": item.summary or "",
+        }
+        for i, item in enumerate(items)
+    ]
+
+    try:
+        resp = await openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are a news classifier. For each article, assign 1-2 topics from this list:\n"
+                        f"{json.dumps(TOPIC_LABELS)}\n\n"
+                        "Return a JSON object with key 'results', which is a list of objects: "
+                        '{"id": <int>, "topics": [<topic1>, <topic2>]}. '
+                        "Only use topics from the provided list. Assign the most relevant 1-2 topics."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(articles_input),
+                },
+            ],
+            response_format={"type": "json_object"},
+        )
+
+        results = json.loads(resp.choices[0].message.content).get("results", [])
+        topic_map = {r["id"]: r["topics"] for r in results if "id" in r and "topics" in r}
+
+        for i, item in enumerate(items):
+            if i in topic_map and topic_map[i]:
+                item.topic = topic_map[i]
+
+    except Exception as e:
+        logger.warning("topic_classification_failed", error=str(e))
+
+    return items
+
+
+# --- Main run function ---
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
@@ -239,6 +304,9 @@ async def run(state: ResearchState) -> dict:
             + " | ".join(source_errors)
         )
 
+    # Classify topics
+    all_news = await _classify_topics(all_news)
+
     news_data = NewsData(news=all_news)
     try:
         insert_research_snapshot(domain, datetime.now(timezone.utc), "news", news_data)
@@ -249,6 +317,7 @@ async def run(state: ResearchState) -> dict:
         "news": news_data,
         "completed_nodes": ["news"],
     }
+
 
 # ---------------------------------------------------------------------------
 # Capability registration
