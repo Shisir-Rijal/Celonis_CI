@@ -77,3 +77,19 @@ class SupabaseError(AppError):
 
 class RepositoryError(SupabaseError):
     """Raised when a repository-level database operation fails."""
+
+class AssessmentError(AppError):
+    """Raised when the Assessment node cannot parse or validate the LLM response."""
+
+class CapabilityRegistrationError(AppError):
+    """Raised when a capability name is registered more than once."""
+
+class SynthesisError(AppError):
+    """Raised when the Synthesize node cannot parse the LLM response."""
+
+# ---------------------------------------------------------------------------
+# Agents
+# ---------------------------------------------------------------------------
+
+class NewsError(AppError):
+    """Raised when all news sources fail and no articles could be fetched."""

@@ -14,24 +14,24 @@ export default function Home() {
         </div>
       </div>
 
-      <SectionWrapper variant="grey" heading="Test heading">
+      <SectionWrapper label="Test heading">
         <Button><h4>Test</h4></Button>
       </SectionWrapper>
 
-      <SectionWrapper heading="Test heading">
+      <SectionWrapper label="Test heading">
         <Button><h4>Test</h4></Button>
       </SectionWrapper>
 
       <div className="flex flex-row gap-8">
-        <SectionWrapper variant="grey" size="half" heading="Test heading">
+        <SectionWrapper label="Test heading" className="w-1/2">
           <Button><h4>Test</h4></Button>
         </SectionWrapper>
-        <SectionWrapper variant="grey" size="half" heading="Test heading">
+        <SectionWrapper label="Test heading" className="w-1/2">
           <Button><h4>Test</h4></Button>
         </SectionWrapper>
       </div>
 
-      <SectionWrapper heading="Test heading">
+      <SectionWrapper label="Test heading">
         <Button><h4>Test</h4></Button>
       </SectionWrapper>
 

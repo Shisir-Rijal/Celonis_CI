@@ -3,7 +3,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 import structlog
+from datetime import datetime, timezone
 from app.agents.research.state import ResearchState, SocialData
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.agents.shared.utils.brandfetch import _get_brand_data
 
 logger = structlog.get_logger(__name__)
@@ -36,17 +38,25 @@ async def _scrape_social_links(domain: str) -> dict[str, str]:
 async def run(state: ResearchState) -> dict:
     logger.info("run_socials")
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "socials"):
+        logger.info("node_skipped_cached", node="socials", domain=domain)
+        return {"completed_nodes": ["socials"]}
     company = domain.split(".")[0].capitalize()
 
     try:
         social_links = await _scrape_social_links(domain)
+        socials_data = SocialData(
+            company=company,
+            url=f"https://{domain}",
+            title=f"Socials: {company}",
+            social_links=social_links or None,
+        )
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "socials", socials_data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="socials", error=str(db_err))
         return {
-            "socials": SocialData(
-                company=company,
-                url=f"https://{domain}",
-                title=f"Socials: {company}",
-                social_links=social_links or None,
-            ),
+            "socials": socials_data,
             "completed_nodes": ["socials"],
         }
     except Exception as e:

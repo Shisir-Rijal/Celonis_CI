@@ -5,9 +5,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 import asyncio
 import structlog
 import httpx
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from app.agents.research.state import ResearchState, YoutubeData, YoutubeChannelData, YtSearchData
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.agents.shared.utils.youtube import _scrape_yt_content_by_search_for, VideoData
 from app.config import get_settings
 
@@ -106,6 +108,9 @@ async def _scrape_channel(youtube_url: str, company: str) -> YoutubeChannelData 
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "youtube"):
+        logger.info("node_skipped_cached", node="youtube", domain=domain)
+        return {"completed_nodes": ["youtube"]}
     company = domain.split(".")[0].capitalize()
     logger.info("run_youtube", domain=domain)
 
@@ -121,16 +126,21 @@ async def run(state: ResearchState) -> dict:
             _scrape_yt_content_by_search_for(company),
         )
 
+        youtube_data = YoutubeData(
+            channel=channel,
+            search=YtSearchData(
+                company=company,
+                url=f"https://www.youtube.com/results?search_query={company}",
+                title=f"YouTube Search: {company}",
+                videos=search_videos or [],
+            ) if search_videos else None,
+        )
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "youtube", youtube_data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="youtube", error=str(db_err))
         return {
-            "youtube": YoutubeData(
-                channel=channel,
-                search=YtSearchData(
-                    company=company,
-                    url=f"https://www.youtube.com/results?search_query={company}",
-                    title=f"YouTube Search: {company}",
-                    videos=search_videos or [],
-                ) if search_videos else None,
-            ),
+            "youtube": youtube_data,
             "completed_nodes": ["youtube"],
         }
     except Exception as e:

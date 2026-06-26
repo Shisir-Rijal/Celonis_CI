@@ -6,9 +6,11 @@ import asyncio
 import re
 import httpx
 import structlog
+from datetime import datetime, timezone
 from openai import AsyncOpenAI
 
 from app.agents.research.state import ResearchState, SeoGeoData, SeoKeywordSighting, GeoKeywordSighting
+from app.agents.research.repositories.research_repository import insert_research_snapshot, snapshot_exists
 from app.config import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -221,6 +223,9 @@ async def _geo_keyword_search(company: str, domain: str) -> list[GeoKeywordSight
 
 async def run(state: ResearchState) -> dict:
     domain = state["competitor_domain"]
+    if snapshot_exists(domain, "seogeo"):
+        logger.info("node_skipped_cached", node="seogeo", domain=domain)
+        return {"completed_nodes": ["seogeo"]}
     company = domain.split(".")[0].capitalize()
     logger.info("run_seogeo", domain=domain)
 
@@ -230,11 +235,13 @@ async def run(state: ResearchState) -> dict:
             _geo_keyword_search(company, domain),
         )
 
+        seogeo_data = SeoGeoData(seo=seo_sightings, geo=geo_sightings)
+        try:
+            insert_research_snapshot(domain, datetime.now(timezone.utc), "seogeo", seogeo_data)
+        except Exception as db_err:
+            logger.warning("snapshot_write_failed", node="seogeo", error=str(db_err))
         return {
-            "seogeo": SeoGeoData(
-                seo=seo_sightings,
-                geo=geo_sightings,
-            ),
+            "seogeo": seogeo_data,
             "completed_nodes": ["seogeo"],
         }
 

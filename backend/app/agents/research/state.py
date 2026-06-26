@@ -1,8 +1,8 @@
+import re
 from typing import TypedDict, Annotated, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, timezone
 import operator
-from app.models.schemas import ChunkMetadata
 from datetime import date
 from typing import Literal
 from app.agents.shared.utils.youtube import VideoData
@@ -58,6 +58,21 @@ class EventItem(BaseData):
     attendees: int | None = None
     location: str | None = None
     event_topic: str | None = None     # human-readable topic string (≠ BaseData.topic = RAG tags)
+
+    @field_validator("attendees", mode="before")
+    @classmethod
+    def coerce_attendees(cls, v: object) -> int | None:
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float):
+            return int(v)
+        if isinstance(v, str):
+            m = re.match(r"[\d,]+", v.strip())
+            if m:
+                return int(m.group().replace(",", ""))
+        return None
     organized_by: str | None = None
     sponsors: list[str] | None = None
     speakers: list[str] | None = None
@@ -110,7 +125,79 @@ class NewsItem(BaseData):
 class NewsData(BaseModel):
     news: list[Any] = []
 
+def to_rag_document(item: "NewsItem", company: str) -> dict:
+    """Convert a NewsItem to a RAGDocument-compatible dict.
 
+    Return type is dict for now; will be updated to RAGDocument
+    once Issue #73 defines the type.
+    """
+    content = item.text or item.summary or item.heading or ""
+
+    if item.text:
+        chunking_strategy = "structural" if len(item.text) > 100 else "agentic"
+    else:
+        chunking_strategy = "none"
+
+    return {
+        "content": content,
+        "metadata": {
+            "company": company,
+            "source_type": item.source_type or "news",
+            "source_origin": item.source_origin,
+            "date": item.date,
+            "url": item.url,
+            "title": item.heading,
+            "language": item.language or "en",
+            "topic": item.topic or ["news"],
+            "content_type": item.content_type or "text",
+            "visual_type": item.visual_type,
+            "chunking_strategy": chunking_strategy,
+        },
+    }
+
+
+def to_rag_documents(data: "NewsData", company: str) -> list[dict]:
+    """Convert all NewsItems to RAGDocument-compatible dicts.
+
+    Skips items where content is empty.
+    """
+    result = []
+    for item in data.news:
+        if not isinstance(item, NewsItem):
+            continue
+        doc = to_rag_document(item, company)
+        if doc["content"]:
+            result.append(doc)
+    return result
+
+
+def get_frequency(data: "NewsData") -> dict[str, int]:
+    """Return article count per date (YYYY-MM-DD).
+
+    Uses published_date field; skips items where it is None.
+    """
+    frequency: dict[str, int] = {}
+    for item in data.news:
+        if not isinstance(item, NewsItem):
+            continue
+        if item.published_date is None:
+            continue
+        frequency[item.published_date] = frequency.get(item.published_date, 0) + 1
+    return frequency
+
+
+def to_source(item: "NewsItem") -> Any:
+    """Convert a NewsItem to a Source object for AgentCall compatibility.
+
+    relevance_score is set to 1.0 as a sentinel — news articles have no
+    vector similarity score.
+    """
+    from app.models.schemas import Source
+    return Source(
+        url=item.url or "",
+        title=item.heading,
+        relevance_score=1.0,
+    )
 # --Newsletter-Node:
 
 class NewsletterData(BaseData):
@@ -245,6 +332,19 @@ class YoutubeData(BaseModel):
 
 # --Visuals-Node:
 
+class FontInfo(BaseModel):
+    name: str
+    type: str | None = None              # e.g. "Heading", "Body" (from Brandfetch)
+    weights: list[str] | None = None     # e.g. ["400", "700"]
+    sizes: list[str] | None = None       # e.g. ["14px", "48px"] — sizes the font is used at on-page
+
+
+class SourcedAsset(BaseModel):
+    url: str
+    source_page: str | None = None  # the page URL this image/video was scraped from
+    category: str | None = None  # images only: "diagram" | "screenshot" | "photo" | "illustration" | "other"
+
+
 class VisualsData(BaseData):
     # --- chunk constants ---
     source_origin: Literal["owned", "earned", "third_party", "internal"] = "owned"
@@ -256,11 +356,11 @@ class VisualsData(BaseData):
 
     # --- visuals-specific ---
     logo: list[str] = []
-    colors: dict[str, list[str]] = {}  # {"primary": [...], "secondary": [...]}
-    fonts: list[str] | None = None
-    images: list[str] | None = None
+    colors: dict[str, Any] = {}  # {"primary": [...], "secondary": [...], "semantic": {hex: label}}
+    fonts: list[FontInfo] | None = None
+    images: list[SourcedAsset] | None = None
     animations: dict[str, Any] | None = None
-    videos: list[str] = []
+    videos: list[SourcedAsset] = []
     icons: dict[str, Any] | None = None
 
 
