@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import NavButton from "./NavButton";
 import MobileMenu from "./MobileMenu";
 import { Menu } from "lucide-react";
 
 export default function NavBar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname();
+  const showExport = pathname !== "/chatbot";
 
   return (
     <>
@@ -36,9 +39,13 @@ export default function NavBar() {
         </div>
 
         {/* Export button right */}
-        <button className="bg-secondary-green text-primary-black px-4 py-2 text-sm font-medium rounded-sm cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0">
-          Export
-        </button>
+        {showExport ? (
+          <button className="bg-secondary-green text-primary-black px-4 py-2 text-sm font-medium rounded-sm cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0">
+            Export
+          </button>
+        ) : (
+          <div className="w-[88px] flex-shrink-0" aria-hidden />
+        )}
       </nav>
 
       {/* Mobile topbar — visible on md and below */}
