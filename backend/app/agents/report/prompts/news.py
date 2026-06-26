@@ -6,12 +6,18 @@ import json
 def build_news_prompt(data: dict) -> tuple[str, str]:
     """Return (system_prompt, user_prompt) for the news report."""
 
+    latest_run = max(
+        (c["run_at"] for c in data.get("companies", [])),
+        default="unknown"
+    )[:10]
+
     system_prompt = """You are a competitive intelligence analyst at Celonis.
 Your job is to write concise, executive-ready reports based on competitor news data.
 
 Rules:
 - Use topic tags to identify thematic patterns across competitors
 - Prioritize insights from firecrawl (official) sources over serper (third-party media)
+- Use the data collection date as your reference point for assessing recency
 - Every insight must include a "so what" for Celonis
 - Be direct and opinionated. Avoid filler phrases like "it is worth noting that"
 - Output clean Markdown with clear sections
@@ -19,6 +25,7 @@ Rules:
 
     user_prompt = f"""Analyze the following competitor news data and write a competitive intelligence report.
 
+Data collection date: {latest_run} — use this as your "today" reference point when assessing recency.
 Each article has a source_type (firecrawl = official company source, finnhub = financial media, serper = third-party media)
 and topic tags (e.g. Product Launch, Partnership, AI & Technology).
 

@@ -15,6 +15,7 @@ interface ReportModalProps {
 
 function markdownToHtml(md: string): string {
   return md
+    .replace(/^# (.+)$/gm, '')  
     .replace(/^## (.+)$/gm, '<h2 class="text-lg font-medium text-primary-white mt-6 mb-2">$1</h2>')
     .replace(/^### (.+)$/gm, '<h3 class="text-base font-medium text-primary-white mt-4 mb-1">$1</h3>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="text-primary-white">$1</strong>')
@@ -24,24 +25,37 @@ function markdownToHtml(md: string): string {
 }
 
 function handleDownload(topic: string, markdown: string) {
+  // Strip h1 titles from markdown before converting — we render our own title
+  const cleanedMarkdown = markdown.replace(/^# .+$/gm, '');
+  
+  const today = new Date().toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+
   const printContent = `
     <!DOCTYPE html>
     <html>
       <head>
         <title>${topic} — Competitive Intelligence Report</title>
         <style>
+          @page { size: A4; margin: 2cm; margin-top: 1.5cm; }
+          html { -webkit-print-color-adjust: exact; }
           body { font-family: sans-serif; max-width: 720px; margin: 40px auto; color: #111; line-height: 1.7; }
+          h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; text-transform: capitalize; }
           h2 { font-size: 18px; font-weight: 600; margin-top: 32px; margin-bottom: 8px; }
           h3 { font-size: 15px; font-weight: 600; margin-top: 24px; margin-bottom: 6px; }
           p { font-size: 14px; margin-bottom: 12px; }
           li { font-size: 14px; margin-bottom: 6px; margin-left: 20px; list-style: disc; }
           strong { font-weight: 600; }
+          .meta { color: #666; font-size: 13px; margin-bottom: 32px; }
         </style>
       </head>
       <body>
-        <h1 style="font-size:22px;font-weight:700;margin-bottom:4px;text-transform:capitalize">${topic} — Competitive Intelligence Report</h1>
-        <p style="color:#666;font-size:13px;margin-bottom:32px">${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</p>
-        ${markdownToHtml(markdown)}
+        <h1>${topic} — Competitive Intelligence Report</h1>
+        <p class="meta">${today}</p>
+        ${markdownToHtml(cleanedMarkdown)}
       </body>
     </html>
   `;
