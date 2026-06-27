@@ -1,12 +1,16 @@
 """Share-of-Voice agent API router.
 
+GET /sov
+    Return all persisted SoV mentions plus light metadata. The dashboard
+    aggregates / filters client-side, mirroring the /events pattern.
+
 POST /sov/run
     Kick off one SoV pipeline run: load news + SEO from research_snapshots,
     classify via LLM, persist relevant mentions to sov_mentions.
 
 A run takes 2-3 minutes for ~400 mentions; clients should set a long timeout.
-The endpoint is idempotent (URL pre-filter + ON CONFLICT) — re-running against
-the same underlying research data is cheap and safe.
+The run endpoint is idempotent (URL pre-filter + ON CONFLICT) — re-running
+against the same underlying research data is cheap and safe.
 
 All endpoints require a valid JWT via Authorization: Bearer <token>.
 """
@@ -20,6 +24,7 @@ from pydantic import BaseModel
 from app.agents.shared.competitors import get_competitor_domains
 from app.agents.sov.graph import sov_graph
 from app.auth.dependencies import require_auth
+from app.rag.supabase_client import get_supabase
 
 logger = structlog.get_logger(__name__)
 
@@ -27,8 +32,40 @@ router = APIRouter(prefix="/sov", tags=["sov"])
 
 
 # ---------------------------------------------------------------------------
-# Response model
+# Response models
 # ---------------------------------------------------------------------------
+
+class SovMention(BaseModel):
+    """One classified mention row, mirroring the sov_mentions table."""
+
+    id: str
+    run_at: str
+    company: str
+    source_type: str            # 'news' | 'seo'
+    source: str                 # 'finnhub' | 'serper' | 'firecrawl' | 'google_serp'
+    title: str
+    content: str | None
+    date: str                   # ISO YYYY-MM-DD
+    month_bucket: str           # YYYY-MM
+    url: str
+    language: str | None
+    themes: list[str]
+    region: str | None          # 'DACH' | 'Europe' | 'NA' | 'APAC' | 'Global'
+    is_relevant: bool
+    reasoning: str | None
+
+
+class SovListResponse(BaseModel):
+    """Dashboard payload: all persisted mentions plus index metadata.
+
+    Frontend aggregates / filters client-side (matches the /events pattern).
+    """
+
+    mentions: list[SovMention]
+    total: int
+    latest_run_at: str | None
+    companies: list[str]        # distinct, sorted, for stable color mapping
+
 
 class SovRunResponse(BaseModel):
     """Summary of one SoV pipeline run.
@@ -50,8 +87,55 @@ class SovRunResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Endpoint
+# Endpoints
 # ---------------------------------------------------------------------------
+
+@router.get("", response_model=SovListResponse)
+async def list_sov_mentions(
+    _: None = Depends(require_auth),
+) -> SovListResponse:
+    """Return all persisted SoV mentions sorted by publication date desc.
+
+    No filtering, no aggregation — the dashboard handles that client-side.
+
+    Raises:
+        500: Unexpected database error.
+    """
+    db = get_supabase()
+
+    try:
+        resp = (
+            db.table("sov_mentions")
+            .select(
+                "id, run_at, company, source_type, source, title, content, "
+                "date, month_bucket, url, language, themes, region, "
+                "is_relevant, reasoning"
+            )
+            .order("date", desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("sov_list_query_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to query SoV mentions.",
+        )
+
+    rows: list[dict] = resp.data or []
+    mentions = [SovMention(**row) for row in rows]
+
+    latest_run_at = max((row["run_at"] for row in rows), default=None)
+    companies = sorted({row["company"] for row in rows})
+
+    logger.info("sov_list_done", mentions=len(mentions), companies=len(companies))
+
+    return SovListResponse(
+        mentions=mentions,
+        total=len(mentions),
+        latest_run_at=latest_run_at,
+        companies=companies,
+    )
+
 
 @router.post("/run", response_model=SovRunResponse)
 async def trigger_sov_run(

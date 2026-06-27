@@ -31,6 +31,7 @@ export default function NavBar() {
           <NavButton text="GEO" href="/brand/geo-intelligence" />
           <NavButton text="Events" href="/events" />
           <NavButton text="News" href="/news" />
+          <NavButton text="SoV" href="/sov" />
           <NavButton text="Chatbot" href="/chatbot" />
           <NavButton text="Settings" href="/settings" />
         </div>

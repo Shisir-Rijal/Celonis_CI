@@ -47,6 +47,7 @@ export default function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
           <NavButton text="Home" href="/" onClick={onClose} />
           <NavButton text="GEO" href="/brand/geo-intelligence" onClick={onClose} />
           <NavButton text="News" href="/news" onClick={onClose} />
+          <NavButton text="SoV" href="/sov" onClick={onClose} />
           <NavButton text="Chatbot" href="/chatbot" onClick={onClose} />
         </div>
 
