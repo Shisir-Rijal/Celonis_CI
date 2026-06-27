@@ -69,7 +69,7 @@ For each mention you receive, decide:
 
 2. region — pick exactly one of: DACH, Europe, NA, APAC, Global.
    - DACH means Germany, Austria, Switzerland.
-   - Europe means continental Europe excluding DACH and UK/Ireland excluded.
+   - Europe means all of Europe except DACH (UK, Ireland, France, Spain, Nordics, etc.).
    - NA means North America (US, Canada, Mexico).
    - APAC means Asia and Pacific (incl. Australia, Japan, India, etc.).
    - Global means no clear regional anchor.

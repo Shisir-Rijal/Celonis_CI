@@ -16,7 +16,8 @@ key in sov_mentions would catch duplicates at write time anyway, but pre-
 filtering is cheaper.
 """
 
-from datetime import date, datetime
+import re
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -31,10 +32,54 @@ logger = structlog.get_logger(__name__)
 # Date parsing
 # ---------------------------------------------------------------------------
 
-def _parse_news_date(raw: Any) -> date | None:
-    """News published_date comes in as a string. Accept ISO and plain YYYY-MM-DD."""
+# "6 hours ago", "2 days ago", "1 week ago", "3 months ago", "1 year ago"
+_RELATIVE_RE = re.compile(
+    r"^(\d+)\s+(hour|day|week|month|year)s?\s+ago$",
+    re.IGNORECASE,
+)
+
+
+def _parse_relative_ago(raw: str, reference: date) -> date | None:
+    """Parse 'N units ago' relative to `reference`. None if no match.
+
+    Months and years are approximated as 30 / 365 days — fine for monthly
+    bucketing where day-of-month does not matter.
+    """
+    match = _RELATIVE_RE.match(raw.strip())
+    if not match:
+        return None
+    n = int(match.group(1))
+    unit = match.group(2).lower()
+    if unit == "hour":
+        return reference  # within the same day in practice
+    if unit == "day":
+        return reference - timedelta(days=n)
+    if unit == "week":
+        return reference - timedelta(weeks=n)
+    if unit == "month":
+        return reference - timedelta(days=30 * n)
+    if unit == "year":
+        return reference - timedelta(days=365 * n)
+    return None
+
+
+def _parse_news_date(raw: Any, reference: date | None = None) -> date | None:
+    """Parse a news published_date string in one of several formats.
+
+    Supported:
+      - ISO timestamps: '2026-04-10T10:00:00Z', '2026-04-10T10:00:00+00:00'
+      - Plain ISO date: '2026-04-10'
+      - Short English:  'Apr 10, 2026' / 'Nov 11, 2025'
+      - Relative:       '6 hours ago' / '2 days ago' / '1 month ago'
+                        (needs `reference`, otherwise unparseable)
+
+    Returns None when no format matches.
+    """
     if not isinstance(raw, str) or not raw:
         return None
+    raw = raw.strip()
+
+    # ISO timestamp or date
     try:
         return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
     except ValueError:
@@ -42,7 +87,19 @@ def _parse_news_date(raw: Any) -> date | None:
     try:
         return datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError:
-        return None
+        pass
+
+    # 'Apr 10, 2026' / 'Nov 11, 2025'
+    try:
+        return datetime.strptime(raw, "%b %d, %Y").date()
+    except ValueError:
+        pass
+
+    # '6 hours ago' etc — needs a reference point
+    if reference is not None:
+        return _parse_relative_ago(raw, reference)
+
+    return None
 
 
 def _parse_run_at(raw: Any) -> date:
@@ -59,13 +116,21 @@ def _parse_run_at(raw: Any) -> date:
 # Per-item converters
 # ---------------------------------------------------------------------------
 
-def _build_news_mention(item: dict, company: str) -> Mention | None:
-    """Convert one news item dict to a Mention. Returns None on missing essentials."""
+def _build_news_mention(
+    item: dict,
+    company: str,
+    reference_date: date | None = None,
+) -> Mention | None:
+    """Convert one news item dict to a Mention. Returns None on missing essentials.
+
+    `reference_date` is the snapshot's run date — used to resolve relative
+    published_date strings like '6 hours ago'.
+    """
     url = item.get("url")
     if not url:
         return None
 
-    pub_date = _parse_news_date(item.get("published_date"))
+    pub_date = _parse_news_date(item.get("published_date"), reference=reference_date)
     if pub_date is None:
         return None  # without a date the mention can't be bucketed for trends
 
@@ -141,8 +206,13 @@ def _load_news_for_company(client, company: str) -> list[Mention]:
     if not rows:
         return []
 
-    items = (rows[0].get("data") or {}).get("news", [])
-    mentions = [m for item in items if (m := _build_news_mention(item, company)) is not None]
+    row = rows[0]
+    reference_date = _parse_run_at(row.get("run_at"))
+    items = (row.get("data") or {}).get("news", [])
+    mentions = [
+        m for item in items
+        if (m := _build_news_mention(item, company, reference_date)) is not None
+    ]
     logger.info(
         "sov_load_news_done",
         company=company,
