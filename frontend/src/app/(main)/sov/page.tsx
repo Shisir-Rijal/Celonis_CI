@@ -1,10 +1,21 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import PageToolbar from "@components/geo/PageToolbar";
 import SectionHeader from "@components/geo/SectionHeader";
+import SovFilters from "@components/sov/SovFilters";
+import SovKpis from "@components/sov/SovKpis";
+import SovShareDonut from "@components/sov/SovShareDonut";
+import SovTrendChart from "@components/sov/SovTrendChart";
+import SovThemeBreakdown from "@components/sov/SovThemeBreakdown";
+import SovRegionChart from "@components/sov/SovRegionChart";
+import SovTrendingAlerts from "@components/sov/SovTrendingAlerts";
+import SovMentionList from "@components/sov/SovMentionList";
+import { applyFilters, hasActiveFilter } from "@/lib/sov/analysis";
 import { useSov } from "@/lib/sov/hooks";
+import { useCompetitorColors } from "@/lib/competitors/hooks";
+import { DEFAULT_SOV_FILTERS, type SovFilters as SovFiltersState } from "@/lib/sov/types";
 
 function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -20,6 +31,19 @@ function formatRelativeTime(iso: string | null | undefined): string {
 
 export default function SovPage() {
   const { data, isLoading, error } = useSov();
+  const { data: brandColors = {} } = useCompetitorColors();
+
+  const [filters, setFilters] = useState<SovFiltersState>(DEFAULT_SOV_FILTERS);
+
+  const filteredMentions = useMemo(
+    () => applyFilters(data?.mentions ?? [], filters),
+    [data, filters],
+  );
+
+  const allCompanies = useMemo(
+    () => [...(data?.companies ?? [])].sort(),
+    [data?.companies],
+  );
 
   const updatedAt = useMemo(
     () => formatRelativeTime(data?.latest_run_at),
@@ -30,7 +54,10 @@ export default function SovPage() {
     if (isLoading) return "loading mentions…";
     if (error) return "failed to load mentions";
     if (!data) return "no data yet";
-    return `${data.total} classified mentions across ${data.companies.length} competitors`;
+    const totalLabel = hasActiveFilter(filters)
+      ? `${filteredMentions.length} of ${data.total} mentions (filtered)`
+      : `${data.total} classified mentions`;
+    return `${totalLabel} across ${data.companies.length} competitors`;
   })();
 
   return (
@@ -53,13 +80,24 @@ export default function SovPage() {
         <PageToolbar runtime="manual / weekly" updatedAt={updatedAt} agentsRunning={0} />
       </header>
 
-      {/* Phase 3 — global filter bar */}
+      {/* Zone 1 — Global filter bar */}
       <section>
         <SectionHeader
           label="Filters"
           description="Theme, region, period and source filters applied across all visualizations."
+          action={
+            hasActiveFilter(filters) ? (
+              <button
+                type="button"
+                onClick={() => setFilters(DEFAULT_SOV_FILTERS)}
+                className="text-xs text-neutral-grey-20 hover:text-primary-white transition-colors cursor-pointer"
+              >
+                Clear filters ×
+              </button>
+            ) : undefined
+          }
         />
-        <PhasePlaceholder phase={3} note="Global filter bar lands here." />
+        <SovFilters filters={filters} onChange={setFilters} />
       </section>
 
       {/* Phase 4 — KPIs */}
@@ -68,7 +106,7 @@ export default function SovPage() {
           label="At a glance"
           description="Total mentions, leading competitor, dominant theme and active companies in the selected period."
         />
-        <PhasePlaceholder phase={4} note="Four KPI tiles." />
+        <SovKpis mentions={filteredMentions} totalCompanies={allCompanies.length} />
       </section>
 
       {/* Phase 4 — Share of Voice headline */}
@@ -77,7 +115,11 @@ export default function SovPage() {
           label="Share of Voice"
           description="Each competitor's share of all relevant mentions in the selected period."
         />
-        <PhasePlaceholder phase={4} note="Donut chart with competitor colors." />
+        <SovShareDonut
+          mentions={filteredMentions}
+          allCompanies={allCompanies}
+          brandColors={brandColors}
+        />
       </section>
 
       {/* Phase 5 — Trend over time */}
@@ -86,7 +128,11 @@ export default function SovPage() {
           label="Trend over time"
           description="Mentions per month per competitor — who's gaining, who's losing visibility."
         />
-        <PhasePlaceholder phase={5} note="Multi-line chart, one line per competitor." />
+        <SovTrendChart
+          mentions={filteredMentions}
+          allCompanies={allCompanies}
+          brandColors={brandColors}
+        />
       </section>
 
       {/* Phase 5 — Theme breakdown */}
@@ -95,7 +141,11 @@ export default function SovPage() {
           label="Themes"
           description="Which competitor dominates which theme — Process Mining, Agentic AI, ERP & SAP and others."
         />
-        <PhasePlaceholder phase={5} note="Stacked horizontal bar: themes × competitors." />
+        <SovThemeBreakdown
+          mentions={filteredMentions}
+          allCompanies={allCompanies}
+          brandColors={brandColors}
+        />
       </section>
 
       {/* Phase 5 — Regional distribution */}
@@ -104,37 +154,30 @@ export default function SovPage() {
           label="Regions"
           description="DACH, Europe, NA, APAC and Global mention volumes — note that SEO mentions are always Global."
         />
-        <PhasePlaceholder phase={5} note="Bar chart per region." />
+        <SovRegionChart mentions={filteredMentions} />
       </section>
 
-      {/* Phase 6 — Rising / Declining themes */}
+      {/* Trending themes — rising / declining */}
       <section>
         <SectionHeader
           label="Trending themes"
           description="Topics gaining and losing momentum compared to the previous month."
         />
-        <PhasePlaceholder phase={6} note="Two alert cards: rising / declining." />
+        <SovTrendingAlerts mentions={filteredMentions} />
       </section>
 
-      {/* Phase 6 — Mention detail list */}
+      {/* Mention detail list */}
       <section>
         <SectionHeader
           label="Mentions"
-          description="All individual mentions with title, themes, region and source — filterable."
+          description="All individual mentions with title, themes, region and source — filterable above."
         />
-        <PhasePlaceholder phase={6} note="Mention cards with their own scoped filters." />
+        <SovMentionList
+          mentions={filteredMentions}
+          allCompanies={allCompanies}
+          brandColors={brandColors}
+        />
       </section>
-    </div>
-  );
-}
-
-function PhasePlaceholder({ phase, note }: { phase: number; note: string }) {
-  return (
-    <div className="rounded-sm border border-dashed border-neutral-grey-30 bg-primary-black/40 px-6 py-8 flex flex-col gap-1">
-      <span className="text-[11px] tracking-[0.18em] uppercase text-neutral-grey-20 font-medium">
-        Phase {phase}
-      </span>
-      <span className="text-sm text-neutral-grey-10">{note}</span>
     </div>
   );
 }
