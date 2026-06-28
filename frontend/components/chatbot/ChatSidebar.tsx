@@ -11,7 +11,7 @@ export default function ChatSidebar() {
   const createConversation = useChatbotStore((state) => state.createConversation);
 
   return (
-    <aside className="flex flex-col w-64 flex-shrink-0 border-r border-neutral-grey-30 bg-primary-black">
+    <aside className="flex flex-col h-full w-64 flex-shrink-0 bg-primary-black">
       <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-grey-30">
         <div className="flex items-center gap-2">
           <span

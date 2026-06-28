@@ -37,7 +37,7 @@ export default function ChatComposer({ onSend, disabled = false }: ChatComposerP
 
   return (
     <div className="w-full flex flex-col items-center gap-2 px-6 pb-6 pt-4">
-      <div className="w-full max-w-2xl relative">
+      <div className="w-full max-w-2xl flex items-end gap-2">
         <textarea
           ref={textareaRef}
           value={value}
@@ -45,7 +45,8 @@ export default function ChatComposer({ onSend, disabled = false }: ChatComposerP
           onKeyDown={handleKeyDown}
           placeholder="Message…"
           rows={1}
-          className="w-full resize-none rounded-md bg-neutral-grey-30 text-sm text-primary-white placeholder:text-neutral-grey-20 px-4 py-3 pr-12 outline-none border border-transparent focus:border-neutral-grey-20 transition-colors leading-relaxed"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          className="flex-1 resize-none rounded-md bg-neutral-grey-30 text-sm text-primary-white placeholder:text-neutral-grey-20 px-4 py-3 outline-none border border-transparent focus:border-neutral-grey-20 transition-colors leading-relaxed overflow-y-auto [&::-webkit-scrollbar]:hidden"
         />
         <button
           type="button"
@@ -53,10 +54,10 @@ export default function ChatComposer({ onSend, disabled = false }: ChatComposerP
           disabled={!canSend}
           aria-label="Send message"
           className={clsx(
-            "absolute right-2 bottom-2 flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+            "flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full transition-opacity",
             canSend
-              ? "text-secondary-green hover:bg-neutral-grey-30 cursor-pointer"
-              : "text-neutral-grey-20 cursor-not-allowed"
+              ? "bg-secondary-green text-primary-black hover:opacity-90 cursor-pointer"
+              : "bg-neutral-grey-30 text-neutral-grey-20 cursor-not-allowed"
           )}
         >
           <SendHorizontal size={16} />

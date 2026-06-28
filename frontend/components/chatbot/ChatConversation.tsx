@@ -23,7 +23,8 @@ export default function ChatConversation() {
   return (
     <div
       ref={scrollRef}
-      className="flex-1 overflow-y-auto px-6 py-8"
+      style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+      className="flex-1 overflow-y-auto px-6 py-8 [&::-webkit-scrollbar]:hidden"
     >
       <div className="mx-auto w-full max-w-2xl">
         {!hasMessages ? (
