@@ -62,7 +62,9 @@ class Settings(BaseSettings):
     GMAIL_APP_PASSWORD: str | None = None
 
     # --- Backend ---
-    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    # Comma-separated origins string — split at usage point in main.py.
+    # Example: BACKEND_CORS_ORIGINS=https://app.vercel.app,http://localhost:3000
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000"
 
     # --- Auth ---
     APP_PASSWORD: str

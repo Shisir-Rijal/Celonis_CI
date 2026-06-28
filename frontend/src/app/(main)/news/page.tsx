@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo } from "react";
+import { useMemo, Suspense } from "react";
 
 import SectionHeader from "@components/geo/SectionHeader";
 import PageToolbar from "@components/geo/PageToolbar";
@@ -80,14 +80,6 @@ function filterArticles(
     if (topic !== "all" && !(a.topic ?? []).includes(topic)) return false;
     return true;
   });
-}
-
-export default function NewsPage() {
-  return (
-    <Suspense fallback={<ZoneSkeleton />}>
-      <NewsPageInner />
-    </Suspense>
-  );
 }
 
 function NewsPageInner() {
@@ -323,5 +315,13 @@ function NewsPageInner() {
             })}
       </section>
     </div>
+  );
+}
+
+export default function NewsPage() {
+  return (
+    <Suspense>
+      <NewsPageInner />
+    </Suspense>
   );
 }

@@ -133,9 +133,9 @@ function computeAnalysis(events: EventItem[], allCompanies: string[]): Analysis 
     .map(([company, count]) => ({ company, count, isCelonis: isCelonis(company) }))
     .sort((a, b) => b.count - a.count);
 
-  const topCompetitor = perCompany.find((c) => !c.isCelonis);
-  const mostActiveCompetitor = topCompetitor
-    ? { name: topCompetitor.company, count: topCompetitor.count }
+  const _topCompetitor = perCompany.find((c) => !c.isCelonis) ?? null;
+  const mostActiveCompetitor = _topCompetitor
+    ? { name: _topCompetitor.company, count: _topCompetitor.count }
     : null;
 
   // Format mix (same order as perCompany)

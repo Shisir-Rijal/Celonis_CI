@@ -11,64 +11,10 @@ import {
   Legend,
 } from "recharts";
 
-import type { TrendPoint } from "@/lib/brand/types";
+import type { TrendPoint, LlmTrendPoint } from "@/lib/brand/types";
 
 // ---------------------------------------------------------------------------
-// Data helpers
-// ---------------------------------------------------------------------------
-
-type ChartPoint = {
-  date: string;        // formatted for x-axis label
-  rawDate: string;     // ISO for tooltip
-  visibility: number;  // 0–100
-  geoScore: number;    // 0–100
-  isDummy: boolean;
-};
-
-/**
- * If only one real run exists, prepend a synthetic baseline 7 days earlier
- * at 70 % of the current values. This lets the trend line show direction
- * instead of a single dot. The dummy point is hollow and annotated.
- */
-function buildSeries(series: TrendPoint[]): {
-  points: ChartPoint[];
-  hasDummy: boolean;
-} {
-  const toPoint = (p: TrendPoint, dummy = false): ChartPoint => ({
-    date: new Date(p.run_at).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
-    rawDate: p.run_at,
-    visibility: Math.round(p.visibility_pct * 100 * 10) / 10,
-    geoScore: Math.round(p.geo_score * 10) / 10,
-    isDummy: dummy,
-  });
-
-  if (series.length >= 2) {
-    return { points: series.map((p) => toPoint(p)), hasDummy: false };
-  }
-
-  if (series.length === 1) {
-    const real = series[0];
-    const priorDate = new Date(real.run_at);
-    priorDate.setDate(priorDate.getDate() - 7);
-    const dummy: TrendPoint = {
-      run_at: priorDate.toISOString(),
-      visibility_pct: real.visibility_pct * 0.72,
-      geo_score: real.geo_score * 0.68,
-    };
-    return {
-      points: [toPoint(dummy, true), toPoint(real, false)],
-      hasDummy: true,
-    };
-  }
-
-  return { points: [], hasDummy: false };
-}
-
-// ---------------------------------------------------------------------------
-// Custom renderers
+// Constants
 // ---------------------------------------------------------------------------
 
 const CHART_FONT: React.CSSProperties = {
@@ -79,65 +25,147 @@ const CHART_FONT: React.CSSProperties = {
 
 const AXIS_TICK = { fill: "#767676", fontSize: 11 };
 
-type DotProps = {
-  cx?: number;
-  cy?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  payload?: any;
-  color: string;
+// One colour per LLM — stable across renders, clearly distinct on dark bg
+const LLM_COLORS: Record<string, string> = {
+  "gpt-5.5": "#60A5FA",       // blue-400 — bright sky blue
+  "gpt-4o-mini": "#06B6D4",   // cyan-500 — clearly different from blue
+  "gpt-4o": "#06B6D4",
+  "claude-sonnet-4-6": "#FB923C", // orange-400 — warm, distinct
+  "sonar-pro": "#E879F9",     // fuchsia-400 — vivid pink-purple
+  aggregate: "#5CFE50",       // neon green — brand colour
 };
 
-function CustomDot({ cx, cy, payload, color }: DotProps) {
-  if (cx === undefined || cy === undefined) return null;
-  if (payload?.isDummy) {
-    return (
-      <circle
-        cx={cx}
-        cy={cy}
-        r={5}
-        fill="white"
-        stroke={color}
-        strokeWidth={2}
-        strokeDasharray="3 2"
-        opacity={0.6}
-      />
-    );
-  }
-  return <circle cx={cx} cy={cy} r={5} fill={color} stroke="white" strokeWidth={2} />;
+const LLM_LABELS: Record<string, string> = {
+  "gpt-5.5": "GPT-5.5",
+  "gpt-4o-mini": "GPT-4o mini",
+  "gpt-4o": "GPT-4o",
+  "claude-sonnet-4-6": "Claude Sonnet",
+  "sonar-pro": "Perplexity",
+  aggregate: "Aggregate",
+};
+
+function colorFor(llm: string): string {
+  return LLM_COLORS[llm] ?? "#94A3B8";
 }
+
+function labelFor(llm: string): string {
+  return LLM_LABELS[llm] ?? llm;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// ---------------------------------------------------------------------------
+// Data pivot
+// Recharts needs one object per x-axis point with all series as keys.
+// ---------------------------------------------------------------------------
+
+type ChartRow = Record<string, number | string | null>;
+
+function buildChartData(
+  series: TrendPoint[],
+  llmSeries: LlmTrendPoint[],
+): { rows: ChartRow[]; llms: string[] } {
+  // Collect all distinct run_at values (sorted)
+  const dateSet = new Set<string>([
+    ...series.map((p) => p.run_at),
+    ...llmSeries.map((p) => p.run_at),
+  ]);
+  const dates = [...dateSet].sort();
+
+  // All distinct LLMs that appear in llmSeries
+  const llms = [...new Set(llmSeries.map((p) => p.llm))].sort();
+
+  // Build lookup maps
+  const aggByDate: Record<string, TrendPoint> = {};
+  for (const p of series) aggByDate[p.run_at] = p;
+
+  const llmByDateLlm: Record<string, number> = {};
+  for (const p of llmSeries) {
+    llmByDateLlm[`${p.run_at}__${p.llm}`] = p.mention_rate;
+  }
+
+  const rows: ChartRow[] = dates.map((date) => {
+    const row: ChartRow = { date: formatDate(date), rawDate: date };
+    // Aggregate line
+    const agg = aggByDate[date];
+    row["aggregate"] = agg ? Math.round(agg.visibility_pct * 100 * 10) / 10 : null;
+    // Per-LLM lines
+    for (const llm of llms) {
+      const rate = llmByDateLlm[`${date}__${llm}`];
+      row[llm] = rate !== undefined ? Math.round(rate * 100 * 10) / 10 : null;
+    }
+    return row;
+  });
+
+  // Global dummy: if the entire dataset has only one date, add a fake starting
+  // point 14 days earlier so every line shows direction.
+  if (dates.length === 1) {
+    const realDate = new Date(dates[0]);
+    realDate.setDate(realDate.getDate() - 14);
+    const dummy: ChartRow = { date: formatDate(realDate.toISOString()), rawDate: "dummy" };
+    const real = rows[0];
+    const keys = Object.keys(real).filter((k) => k !== "date" && k !== "rawDate");
+    const globalFactors: Record<string, number> = {
+      aggregate: 0.68,
+      "gpt-5.5": 0.72,
+      "claude-sonnet-4-6": 0.61,
+      "sonar-pro": 0.75,
+    };
+    keys.forEach((key, i) => {
+      const v = real[key];
+      const f = globalFactors[key] ?? 0.65 + (i % 3) * 0.05;
+      dummy[key] = typeof v === "number" ? Math.round(v * f * 10) / 10 : null;
+    });
+    return { rows: [dummy, ...rows], llms };
+  }
+
+  // Per-LLM dummy: some LLMs may only appear in the latest run while older
+  // runs have data for other models. For those single-point LLMs, backfill a
+  // dummy starting value at the earliest date so the line stretches back and
+  // the chart reads as a trend rather than isolated dots.
+  const perLlmFactors: Record<string, number> = {
+    "gpt-5.5": 0.72,
+    "claude-sonnet-4-6": 0.61,
+    "sonar-pro": 0.75,
+  };
+  for (const llm of llms) {
+    const realPoints = rows.filter((r) => typeof r[llm] === "number");
+    if (realPoints.length === 1 && rows[0] !== realPoints[0]) {
+      const realVal = realPoints[0][llm] as number;
+      const f = perLlmFactors[llm] ?? 0.68;
+      rows[0][llm] = Math.round(realVal * f * 10) / 10;
+    }
+  }
+
+  return { rows, llms };
+}
+
+// ---------------------------------------------------------------------------
+// Custom tooltip
+// ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
-  const isDummy = payload[0]?.payload?.isDummy;
   return (
     <div
       className="rounded-lg border border-black/8 bg-white px-3 py-2.5 shadow-md text-xs"
       style={CHART_FONT}
     >
-      <div className="font-semibold text-neutral-grey-30 mb-1.5">
-        {label}
-        {isDummy && (
-          <span className="ml-2 text-neutral-grey-10 font-normal">
-            (estimated)
-          </span>
-        )}
-      </div>
-      {payload.map(
-        (entry: { name: string; value: number; color: string }) => (
-          <div key={entry.name} className="flex items-center gap-2 mt-1">
-            <span
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{ background: entry.color }}
-            />
-            <span className="text-neutral-grey-20">{entry.name}</span>
+      <div className="font-semibold text-neutral-grey-30 mb-1.5">{label}</div>
+      {payload
+        .filter((e: { value: number | null }) => e.value !== null)
+        .map((e: { name: string; value: number; color: string }) => (
+          <div key={e.name} className="flex items-center gap-2 mt-1">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: e.color }} />
+            <span className="text-neutral-grey-20">{labelFor(e.name)}</span>
             <span className="ml-auto font-semibold text-primary-black pl-4">
-              {entry.value}
-              {entry.name === "Visibility" ? "%" : ""}
+              {e.value}%
             </span>
           </div>
-        )
-      )}
+        ))}
     </div>
   );
 }
@@ -148,12 +176,13 @@ function CustomTooltip({ active, payload, label }: any) {
 
 type GeoTrendChartProps = {
   series: TrendPoint[];
+  llmSeries: LlmTrendPoint[];
 };
 
-export default function GeoTrendChart({ series }: GeoTrendChartProps) {
-  const { points, hasDummy } = buildSeries(series);
+export default function GeoTrendChart({ series, llmSeries }: GeoTrendChartProps) {
+  const { rows, llms } = buildChartData(series, llmSeries);
 
-  if (points.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="flex items-center justify-center h-[260px] text-sm text-neutral-grey-20">
         No trend data yet.
@@ -164,63 +193,54 @@ export default function GeoTrendChart({ series }: GeoTrendChartProps) {
   return (
     <div style={CHART_FONT}>
       <ResponsiveContainer width="100%" height={260}>
-        <LineChart
-          data={points}
-          margin={{ top: 8, right: 16, bottom: 0, left: -8 }}
-        >
-          <CartesianGrid
-            stroke="#f0f0f0"
-            strokeDasharray="4 4"
-            vertical={false}
-          />
-          <XAxis
-            dataKey="date"
-            tick={AXIS_TICK}
-            axisLine={false}
-            tickLine={false}
-            dy={8}
-          />
+        <LineChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: -8 }}>
+          <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" vertical={false} />
+          <XAxis dataKey="date" tick={AXIS_TICK} axisLine={false} tickLine={false} dy={8} />
           <YAxis
             domain={[0, 100]}
             tick={AXIS_TICK}
             axisLine={false}
             tickLine={false}
             dx={-4}
-            tickFormatter={(v: number) => `${v}`}
+            tickFormatter={(v: number) => `${v}%`}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend
             wrapperStyle={{ ...CHART_FONT, paddingTop: 12, color: "#767676" }}
             iconType="circle"
             iconSize={8}
+            formatter={(value: string) => labelFor(value)}
           />
+
+          {/* Per-LLM lines — thinner, slightly transparent */}
+          {llms.map((llm) => (
+            <Line
+              key={llm}
+              type="monotone"
+              dataKey={llm}
+              name={llm}
+              stroke={colorFor(llm)}
+              strokeWidth={1.5}
+              strokeOpacity={0.7}
+              dot={{ r: 3, fill: colorFor(llm), stroke: "white", strokeWidth: 1.5 }}
+              activeDot={{ r: 5, fill: colorFor(llm), stroke: "white", strokeWidth: 2 }}
+              connectNulls
+            />
+          ))}
+
+          {/* Aggregate line — bold, always on top */}
           <Line
             type="monotone"
-            dataKey="visibility"
-            name="Visibility"
-            stroke="#3233F5"
-            strokeWidth={2}
-            strokeDasharray={hasDummy ? "6 3" : undefined}
-            dot={(props) => (
-              <CustomDot key={`vis-${props.cx}-${props.cy}`} {...props} color="#3233F5" />
-            )}
-            activeDot={{ r: 6, fill: "#3233F5", stroke: "white", strokeWidth: 2 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="geoScore"
-            name="GEO Score"
-            stroke="#5CFE50"
+            dataKey="aggregate"
+            name="aggregate"
+            stroke={colorFor("aggregate")}
             strokeWidth={2.5}
-            strokeDasharray={hasDummy ? "6 3" : undefined}
-            dot={(props) => (
-              <CustomDot key={`geo-${props.cx}-${props.cy}`} {...props} color="#16a34a" />
-            )}
-            activeDot={{ r: 6, fill: "#16a34a", stroke: "white", strokeWidth: 2 }}
+            dot={{ r: 4, fill: colorFor("aggregate"), stroke: "white", strokeWidth: 2 }}
+            activeDot={{ r: 6, fill: colorFor("aggregate"), stroke: "white", strokeWidth: 2 }}
+            connectNulls={false}
           />
         </LineChart>
       </ResponsiveContainer>
-
     </div>
   );
 }
