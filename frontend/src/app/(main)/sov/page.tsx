@@ -77,7 +77,7 @@ export default function SovPage() {
             <span className="text-primary-white font-medium">{subtitleDetail}</span>.
           </p>
         </div>
-        <PageToolbar runtime="manual / weekly" updatedAt={updatedAt} agentsRunning={0} />
+        <PageToolbar runtime="manual / weekly" updatedAt={updatedAt} agentsRunning={1} />
       </header>
 
       {/* Zone 1 — Global filter bar */}
