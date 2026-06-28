@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 
 import SectionHeader from "@components/geo/SectionHeader";
 import PageToolbar from "@components/geo/PageToolbar";
@@ -83,6 +83,14 @@ function filterArticles(
 }
 
 export default function NewsPage() {
+  return (
+    <Suspense fallback={<ZoneSkeleton />}>
+      <NewsPageInner />
+    </Suspense>
+  );
+}
+
+function NewsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: brandColors = {} } = useCompetitorColors();
