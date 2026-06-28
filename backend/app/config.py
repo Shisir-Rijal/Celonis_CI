@@ -62,16 +62,9 @@ class Settings(BaseSettings):
     GMAIL_APP_PASSWORD: str | None = None
 
     # --- Backend ---
-    # Accepts a comma-separated string (Railway env var) or a JSON array.
+    # Comma-separated origins string — split at usage point in main.py.
     # Example: BACKEND_CORS_ORIGINS=https://app.vercel.app,http://localhost:3000
-    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
-
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    @classmethod
-    def _parse_cors_origins(cls, v: Any) -> list[str]:
-        if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v  # type: ignore[return-value]
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000"
 
     # --- Auth ---
     APP_PASSWORD: str
