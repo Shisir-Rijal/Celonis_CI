@@ -53,7 +53,7 @@ class GeoSynthesisOutput(BaseModel):
     owned_territories: list[str] = Field(
         description=(
             "Use cases or keyword clusters where the target company appears "
-            "with recommendation_strength of 'recommended' or 'default'. "
+            "with recommendation_strength of 'recommended' or 'organic'. "
             "These are the territories the brand owns in AI perception. "
             "List them in 3 to 8 words each. Return empty list if none."
         )
