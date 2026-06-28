@@ -26,97 +26,31 @@ import {
   useGeoStrategicMaps,
 } from "@/lib/brand/hooks";
 
-import type { DeepDiveResponse } from "@/lib/brand/types";
-
 const DEFAULT_COMPANY = "celonis.com";
 
 // ---------------------------------------------------------------------------
-// Deep Dive Zone — extracted to keep the main component readable
+// Helpers
 // ---------------------------------------------------------------------------
 
-function DeepDiveZone({ data }: { data: DeepDiveResponse }) {
-  const [briefingOpen, setBriefingOpen] = useState(false);
-  const { alerts, keyword_rows, full_briefing } = data;
+const LLM_LABELS: Record<string, string> = {
+  "gpt-5.5": "GPT-5.5",
+  "gpt-4o": "GPT-4o",
+  "gpt-4o-mini": "GPT-4o mini",
+  "claude-sonnet-4-6": "Claude Sonnet",
+  "sonar-pro": "Perplexity",
+};
 
-  return (
-    <div className="flex flex-col gap-4">
-      {/* Alert cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {alerts.critical_gap ? (
-          <AlertCard
-            category="Critical Gap"
-            text={alerts.critical_gap}
-            priority="high"
-            recommendation="Address this territory in the next messaging update."
-          />
-        ) : (
-          <DashboardCard label="Critical Gap">
-            <p className="text-sm text-neutral-grey-20">No critical gap identified.</p>
-          </DashboardCard>
-        )}
+function labelLlm(raw: string): string {
+  return LLM_LABELS[raw] ?? raw;
+}
 
-        {alerts.framing_gap ? (
-          <AlertCard
-            category="Framing Gap"
-            text={alerts.framing_gap}
-            priority="medium"
-          />
-        ) : (
-          <DashboardCard label="Framing Gap">
-            <p className="text-sm text-neutral-grey-20">No framing gap identified.</p>
-          </DashboardCard>
-        )}
-
-        {alerts.counter_positioning ? (
-          <AlertCard
-            category="Counter-Positioning"
-            text={alerts.counter_positioning}
-            priority="medium"
-            recommendation="Review messaging to address this criticism."
-          />
-        ) : (
-          <DashboardCard label="Counter-Positioning">
-            <p className="text-sm text-neutral-grey-20">No counter-positioning found.</p>
-          </DashboardCard>
-        )}
-      </div>
-
-      {/* Keyword table */}
-      <DashboardCard
-        label="Keyword performance"
-        sublabel={`${keyword_rows.length} keywords · Click any row to see the AI response excerpt`}
-      >
-        <KeywordTable rows={keyword_rows} />
-      </DashboardCard>
-
-      {/* Full briefing — collapsible */}
-      {full_briefing && (
-        <DashboardCard
-          label="Full strategic briefing"
-          sublabel="Synthesised narrative across all keywords"
-        >
-          <button
-            type="button"
-            onClick={() => setBriefingOpen((o) => !o)}
-            className="flex items-center gap-2 text-sm text-primary-black hover:text-secondary-green transition-colors font-medium cursor-pointer"
-          >
-            <span>{briefingOpen ? "▲" : "▼"}</span>
-            <span>{briefingOpen ? "Collapse" : "Read full briefing"}</span>
-          </button>
-          {briefingOpen && (
-            <div className="mt-4 pt-4 border-t border-black/5">
-              <p
-                className="text-sm text-primary-black leading-relaxed whitespace-pre-wrap"
-                style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}
-              >
-                {full_briefing}
-              </p>
-            </div>
-          )}
-        </DashboardCard>
-      )}
-    </div>
-  );
+function tabCls(active: boolean) {
+  return [
+    "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
+    active
+      ? "bg-secondary-green text-primary-black"
+      : "text-neutral-grey-20 hover:text-primary-white hover:bg-white/5",
+  ].join(" ");
 }
 
 function formatPct(value: number | undefined | null): string {
@@ -141,20 +75,166 @@ function formatRelativeTime(iso: string | undefined): string {
   return `${days} d ago`;
 }
 
+// ---------------------------------------------------------------------------
+// Deep Dive Zone — self-contained with LLM tab state and data fetching
+// ---------------------------------------------------------------------------
+
+function DeepDiveZone({
+  company,
+  availableLlms,
+}: {
+  company: string;
+  availableLlms: string[];
+}) {
+  const [activeLlm, setActiveLlm] = useState<string | null>(null);
+  const [briefingOpen, setBriefingOpen] = useState(false);
+
+  const deep = useGeoDeepDive(company, activeLlm);
+  const showTabs = availableLlms.length > 1;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* LLM tabs */}
+      {showTabs && (
+        <div className="flex items-center gap-1 flex-wrap">
+          <button
+            type="button"
+            className={tabCls(activeLlm === null)}
+            onClick={() => setActiveLlm(null)}
+          >
+            All LLMs
+          </button>
+          {availableLlms.map((l) => (
+            <button
+              key={l}
+              type="button"
+              className={tabCls(activeLlm === l)}
+              onClick={() => setActiveLlm(l === activeLlm ? null : l)}
+            >
+              {labelLlm(l)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {deep.isLoading ? (
+        <ZoneSkeleton height={400} />
+      ) : deep.isError ? (
+        <ZoneError message={deep.error?.message} />
+      ) : !deep.data ? (
+        <ZoneEmpty message="No deep dive data yet." />
+      ) : (
+        <>
+          {/* Alert cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {deep.data.alerts.critical_gap ? (
+              <AlertCard
+                category="Critical Gap"
+                text={deep.data.alerts.critical_gap}
+                priority="high"
+                recommendation="Address this territory in the next messaging update."
+              />
+            ) : (
+              <DashboardCard label="Critical Gap">
+                <p className="text-sm text-neutral-grey-20">No critical gap identified.</p>
+              </DashboardCard>
+            )}
+
+            {deep.data.alerts.framing_gap ? (
+              <AlertCard
+                category="Framing Gap"
+                text={deep.data.alerts.framing_gap}
+                priority="medium"
+              />
+            ) : (
+              <DashboardCard label="Framing Gap">
+                <p className="text-sm text-neutral-grey-20">No framing gap identified.</p>
+              </DashboardCard>
+            )}
+
+            {deep.data.alerts.counter_positioning ? (
+              <AlertCard
+                category="Counter-Positioning"
+                text={deep.data.alerts.counter_positioning}
+                priority="medium"
+                recommendation="Review messaging to address this criticism."
+              />
+            ) : (
+              <DashboardCard label="Counter-Positioning">
+                <p className="text-sm text-neutral-grey-20">No counter-positioning found.</p>
+              </DashboardCard>
+            )}
+          </div>
+
+          {/* Keyword table */}
+          <DashboardCard
+            label="Keyword performance"
+            sublabel={`${deep.data.keyword_rows.length} keywords · ${activeLlm ? labelLlm(activeLlm) : "all LLMs"}`}
+          >
+            <KeywordTable rows={deep.data.keyword_rows} />
+          </DashboardCard>
+
+          {/* Full briefing — collapsible */}
+          {deep.data.full_briefing && (
+            <DashboardCard
+              label="Full strategic briefing"
+              sublabel="Synthesised narrative across all keywords"
+            >
+              <button
+                type="button"
+                onClick={() => setBriefingOpen((o) => !o)}
+                className="flex items-center gap-2 text-sm text-primary-white hover:text-secondary-green transition-colors font-medium cursor-pointer"
+              >
+                <span>{briefingOpen ? "▲" : "▼"}</span>
+                <span>{briefingOpen ? "Collapse" : "Read full briefing"}</span>
+              </button>
+              {briefingOpen && (
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <p
+                    className="text-sm text-neutral-grey-10 leading-relaxed whitespace-pre-wrap"
+                    style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}
+                  >
+                    {deep.data.full_briefing}
+                  </p>
+                </div>
+              )}
+            </DashboardCard>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function GeoIntelligencePage() {
   const company = DEFAULT_COMPANY;
 
-  const intel = useGeoIntelligence(company);
-  const sov = useGeoShareOfVoice(company);
-  const maps = useGeoStrategicMaps(company);
-  const deep = useGeoDeepDive(company);
+  // Zone 1 — KPI tiles, filtered by selectedLlm
+  const [selectedLlm, setSelectedLlm] = useState<string | null>(null);
+  const intel = useGeoIntelligence(company, selectedLlm);
+
+  // Zone 2 — Trends, always unfiltered (separate cache entry)
+  const intelAll = useGeoIntelligence(company, null);
+
+  // Zone 3 — Share of Voice, filterable by LLM
+  const [sovLlm, setSovLlm] = useState<string | null>(null);
+  const sov = useGeoShareOfVoice(company, sovLlm);
+
+  // Zone 4 — Strategic Maps, filterable by LLM
+  const [mapsLlm, setMapsLlm] = useState<string | null>(null);
+  const maps = useGeoStrategicMaps(company, mapsLlm);
 
   const kpis = intel.data?.kpis;
   const deltas = kpis?.deltas;
+  const availableLlms = intelAll.data?.available_llms ?? [];
 
   const updatedAt = useMemo(
-    () => formatRelativeTime(intel.data?.latest_run_at),
-    [intel.data?.latest_run_at]
+    () => formatRelativeTime(intelAll.data?.latest_run_at),
+    [intelAll.data?.latest_run_at]
   );
 
   return (
@@ -171,7 +251,7 @@ export default function GeoIntelligencePage() {
             {company}
           </h1>
           <p className="mt-2 text-sm text-neutral-grey-20 max-w-xl">
-            How AI assistants surface this brand across {" "}
+            How AI assistants surface this brand across{" "}
             <span className="text-primary-white font-medium">30 keywords</span>{" "}
             spanning brand, use-case and competitor-trigger queries.
           </p>
@@ -185,7 +265,27 @@ export default function GeoIntelligencePage() {
       <section>
         <SectionHeader
           label="Visibility at a glance"
-          description="Four headline metrics from the latest analysis run."
+          description={
+            selectedLlm
+              ? `Metrics for ${labelLlm(selectedLlm)} only · latest run`
+              : "Four headline metrics from the latest analysis run."
+          }
+          action={
+            availableLlms.length > 1 ? (
+              <select
+                value={selectedLlm ?? ""}
+                onChange={(e) => setSelectedLlm(e.target.value || null)}
+                className="text-xs border border-white/10 rounded-md px-2 py-1.5 bg-neutral-grey-30/60 text-primary-white focus:outline-none focus:ring-1 focus:ring-secondary-green/50 cursor-pointer"
+              >
+                <option value="">All LLMs</option>
+                {availableLlms.map((l) => (
+                  <option key={l} value={l}>
+                    {labelLlm(l)}
+                  </option>
+                ))}
+              </select>
+            ) : undefined
+          }
         />
         {intel.isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -206,8 +306,7 @@ export default function GeoIntelligencePage() {
               suffix="%"
               subtitle="Keyword mention rate"
               delta={
-                deltas?.visibility_pct !== null &&
-                deltas?.visibility_pct !== undefined
+                deltas?.visibility_pct !== null && deltas?.visibility_pct !== undefined
                   ? {
                       value: Number((deltas.visibility_pct * 100).toFixed(1)),
                       label: "pp vs last run",
@@ -219,6 +318,7 @@ export default function GeoIntelligencePage() {
               label="GEO Score"
               value={formatScore(kpis.geo_score)}
               subtitle="Composite AI search visibility"
+              tooltip="Composite score: mention rate × 0.4 + recommendation rate × 0.6. Weights reflect that organic recommendations carry more brand value than mere mentions."
               highlight
               delta={
                 deltas?.geo_score !== null && deltas?.geo_score !== undefined
@@ -270,37 +370,40 @@ export default function GeoIntelligencePage() {
       </section>
 
       {/* ============================================================== */}
-      {/* Zone 2 — Performance Trends                                    */}
+      {/* Zone 2 — Performance Trends (always unfiltered)                */}
       {/* ============================================================== */}
       <section>
         <SectionHeader
           label="Performance trends"
-          description="Movement across runs, broken down by metric and by LLM."
+          description="Movement across runs — all LLMs plus aggregate."
         />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <DashboardCard
             label="GEO Visibility Trend"
-            sublabel="Mention rate and GEO score per pipeline run"
+            sublabel="Mention rate per LLM and aggregate across runs"
           >
-            {intel.isLoading ? (
+            {intelAll.isLoading ? (
               <ZoneSkeleton height={260} />
-            ) : intel.isError ? (
+            ) : intelAll.isError ? (
               <ZoneError />
             ) : (
-              <GeoTrendChart series={intel.data?.trends.series ?? []} />
+              <GeoTrendChart
+                series={intelAll.data?.trends.series ?? []}
+                llmSeries={intelAll.data?.trends.llm_series ?? []}
+              />
             )}
           </DashboardCard>
           <DashboardCard
             label="LLM Comparison"
-            sublabel="Mention rate per AI model in the latest run"
+            sublabel="Mention and recommendation rate per AI model"
           >
-            {intel.isLoading ? (
+            {intelAll.isLoading ? (
               <ZoneSkeleton height={260} />
-            ) : intel.isError ? (
+            ) : intelAll.isError ? (
               <ZoneError />
             ) : (
               <LlmComparisonChart
-                data={intel.data?.trends.llm_comparison ?? []}
+                data={intelAll.data?.trends.llm_comparison ?? []}
               />
             )}
           </DashboardCard>
@@ -313,7 +416,27 @@ export default function GeoIntelligencePage() {
       <section>
         <SectionHeader
           label="AI share of voice"
-          description="Top companies surfaced alongside, split by keyword tier."
+          description={
+            sovLlm
+              ? `Co-mentions for ${labelLlm(sovLlm)} · keyword tier breakdown`
+              : "Top companies surfaced alongside, split by keyword tier."
+          }
+          action={
+            availableLlms.length > 1 ? (
+              <select
+                value={sovLlm ?? ""}
+                onChange={(e) => setSovLlm(e.target.value || null)}
+                className="text-xs border border-white/10 rounded-md px-2 py-1.5 bg-neutral-grey-30/60 text-primary-white focus:outline-none focus:ring-1 focus:ring-secondary-green/50 cursor-pointer"
+              >
+                <option value="">All LLMs</option>
+                {availableLlms.map((l) => (
+                  <option key={l} value={l}>
+                    {labelLlm(l)}
+                  </option>
+                ))}
+              </select>
+            ) : undefined
+          }
         />
         {sov.isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -346,7 +469,27 @@ export default function GeoIntelligencePage() {
       <section>
         <SectionHeader
           label="Strategic maps"
-          description="Which companies appear alongside us, and which use-case territories we own."
+          description={
+            mapsLlm
+              ? `Peer network and territory map for ${labelLlm(mapsLlm)}`
+              : "Which companies appear alongside us, and which use-case territories we own."
+          }
+          action={
+            availableLlms.length > 1 ? (
+              <select
+                value={mapsLlm ?? ""}
+                onChange={(e) => setMapsLlm(e.target.value || null)}
+                className="text-xs border border-white/10 rounded-md px-2 py-1.5 bg-neutral-grey-30/60 text-primary-white focus:outline-none focus:ring-1 focus:ring-secondary-green/50 cursor-pointer"
+              >
+                <option value="">All LLMs</option>
+                {availableLlms.map((l) => (
+                  <option key={l} value={l}>
+                    {labelLlm(l)}
+                  </option>
+                ))}
+              </select>
+            ) : undefined
+          }
         />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <DashboardCard
@@ -381,7 +524,7 @@ export default function GeoIntelligencePage() {
       </section>
 
       {/* ============================================================== */}
-      {/* Zone 5 — Deep Dive                                             */}
+      {/* Zone 5 — Deep Dive (LLM tabs inside the zone)                  */}
       {/* ============================================================== */}
       <section>
         <SectionHeader
@@ -396,16 +539,7 @@ export default function GeoIntelligencePage() {
             </button>
           }
         />
-
-        {deep.isLoading ? (
-          <ZoneSkeleton height={400} />
-        ) : deep.isError ? (
-          <ZoneError message={deep.error?.message} />
-        ) : deep.data ? (
-          <DeepDiveZone data={deep.data} />
-        ) : (
-          <ZoneEmpty message="No deep dive data yet." />
-        )}
+        <DeepDiveZone company={company} availableLlms={availableLlms} />
       </section>
     </div>
   );

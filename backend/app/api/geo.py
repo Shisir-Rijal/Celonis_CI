@@ -13,11 +13,12 @@ All endpoints require a valid JWT via Authorization: Bearer <token>.
 """
 
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
+from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.auth.dependencies import require_auth
@@ -56,10 +57,18 @@ class TrendPoint(BaseModel):
 class LlmComparisonPoint(BaseModel):
     llm: str
     mention_rate: float
+    recommendation_rate: float
+
+
+class LlmTrendPoint(BaseModel):
+    run_at: datetime
+    llm: str
+    mention_rate: float
 
 
 class TrendsBlock(BaseModel):
     series: list[TrendPoint]
+    llm_series: list[LlmTrendPoint]
     llm_comparison: list[LlmComparisonPoint]
 
 
@@ -68,6 +77,7 @@ class GeoIntelligenceResponse(BaseModel):
     latest_run_at: datetime
     kpis: KpiBlock
     trends: TrendsBlock
+    available_llms: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -106,15 +116,19 @@ def _compute_deltas(current: dict, previous: dict | None) -> KpiDeltas | None:
 )
 async def get_geo_intelligence(
     company: str,
+    llm: Annotated[str | None, Query(description="Filter KPI tiles to a specific LLM provider.")] = None,
     _: None = Depends(require_auth),
 ) -> GeoIntelligenceResponse:
     """Return GEO Intelligence dashboard data for Zone 1 and Zone 2.
 
     Reads from brand_geo_runs (all runs, ordered ascending for trend series)
-    and brand_geo_sightings (latest run only, for LLM comparison).
+    and brand_geo_sightings (latest run only, for LLM comparison + filter).
 
     Args:
         company: Company domain, e.g. "celonis.com".
+        llm: Optional LLM name to filter Zone 1 KPI tiles. When set, KPIs are
+            computed from sightings for that model only. Deltas are omitted
+            in this view. Trend series always shows the aggregate.
 
     Raises:
         404: No pipeline runs found for this company.
@@ -150,29 +164,66 @@ async def get_geo_intelligence(
     latest = runs[-1]
     previous = runs[-2] if len(runs) >= 2 else None
 
-    # Guard: recommendation_rate may be null in older runs (pre-migration 007)
-    latest_rec_rate = latest.get("recommendation_rate") or 0.0
-    prev_rec_rate = (previous.get("recommendation_rate") or 0.0) if previous else 0.0
+    # ------------------------------------------------------------------
+    # Fetch sightings for latest run — needed for LLM comparison and filter
+    # ------------------------------------------------------------------
+    try:
+        sightings_resp = (
+            db.table("brand_geo_sightings")
+            .select("llm, mentioned, recommendation_strength")
+            .eq("company", company)
+            .eq("run_at", latest["run_at"])
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("geo_sightings_query_failed", company=company, error=str(exc))
+        sightings_resp = None
 
-    if previous:
-        previous = {**previous, "recommendation_rate": prev_rec_rate}
+    sightings: list[dict] = (sightings_resp.data if sightings_resp else None) or []
+
+    # LLMs present in the latest run — for frontend filter pills
+    available_llms: list[str] = sorted({row.get("llm") or "unknown" for row in sightings})
 
     # ------------------------------------------------------------------
     # Zone 1 — KPIs
+    # When llm filter is active: compute from sightings (no deltas).
+    # Without filter: read from brand_geo_runs aggregate (with deltas).
     # ------------------------------------------------------------------
-    kpis = KpiBlock(
-        visibility_pct=latest["mention_rate"] or 0.0,
-        geo_score=_geo_score(latest["mention_rate"] or 0.0, latest_rec_rate),
-        active_recommendation_pct=latest_rec_rate,
-        gap_count=latest["gap_keyword_count"] or 0,
-        deltas=_compute_deltas(
-            {**latest, "recommendation_rate": latest_rec_rate},
-            previous,
-        ),
-    )
+    if llm:
+        llm_rows = [row for row in sightings if row.get("llm") == llm]
+        total_llm = len(llm_rows) or 1
+        mr = sum(1 for r in llm_rows if r.get("mentioned")) / total_llm
+        rr = sum(
+            1 for r in llm_rows
+            if r.get("recommendation_strength") in ("recommended", "organic")
+        ) / total_llm
+        gap = sum(1 for r in llm_rows if not r.get("mentioned"))
+        kpis = KpiBlock(
+            visibility_pct=mr,
+            geo_score=_geo_score(mr, rr),
+            active_recommendation_pct=rr,
+            gap_count=gap,
+            deltas=None,
+        )
+    else:
+        # Guard: recommendation_rate may be null in older runs (pre-migration 007)
+        latest_rec_rate = latest.get("recommendation_rate") or 0.0
+        prev_rec_rate = (previous.get("recommendation_rate") or 0.0) if previous else 0.0
+        if previous:
+            previous = {**previous, "recommendation_rate": prev_rec_rate}
+        kpis = KpiBlock(
+            visibility_pct=latest["mention_rate"] or 0.0,
+            geo_score=_geo_score(latest["mention_rate"] or 0.0, latest_rec_rate),
+            active_recommendation_pct=latest_rec_rate,
+            gap_count=latest["gap_keyword_count"] or 0,
+            deltas=_compute_deltas(
+                {**latest, "recommendation_rate": latest_rec_rate},
+                previous,
+            ),
+        )
 
     # ------------------------------------------------------------------
-    # Zone 2a — Trend series (all runs)
+    # Zone 2a — Aggregate trend series (from brand_geo_runs)
     # ------------------------------------------------------------------
     series = [
         TrendPoint(
@@ -187,44 +238,78 @@ async def get_geo_intelligence(
     ]
 
     # ------------------------------------------------------------------
-    # Zone 2b — LLM comparison (latest run only, aggregated in Python)
-    # Supabase client has no GROUP BY — fetch 30 rows, aggregate here.
+    # Zone 2a — Per-LLM trend lines (from sightings across all runs)
+    # One extra query; acceptable since run count is small.
     # ------------------------------------------------------------------
+    llm_series: list[LlmTrendPoint] = []
     try:
-        sightings_resp = (
+        all_sightings_resp = (
             db.table("brand_geo_sightings")
-            .select("llm, mentioned")
+            .select("run_at, llm, mentioned")
             .eq("company", company)
-            .eq("run_at", latest["run_at"])
             .execute()
         )
+        all_sightings: list[dict] = (all_sightings_resp.data or [])
+        run_llm_totals: dict[tuple[str, str], int] = defaultdict(int)
+        run_llm_mentions: dict[tuple[str, str], int] = defaultdict(int)
+        for row in all_sightings:
+            key = (row["run_at"], row.get("llm") or "unknown")
+            run_llm_totals[key] += 1
+            if row.get("mentioned"):
+                run_llm_mentions[key] += 1
+        llm_series = [
+            LlmTrendPoint(
+                run_at=run_at,
+                llm=llm_name,
+                mention_rate=round(run_llm_mentions[(run_at, llm_name)] / total, 4),
+            )
+            for (run_at, llm_name), total in run_llm_totals.items()
+        ]
     except Exception as exc:
-        logger.error("geo_sightings_query_failed", company=company, error=str(exc))
-        sightings_resp = None
+        logger.warning("geo_llm_trend_failed", company=company, error=str(exc))
 
-    sightings: list[dict] = (sightings_resp.data if sightings_resp else None) or []
-
+    # ------------------------------------------------------------------
+    # Zone 2b — LLM comparison (latest run, always all LLMs + aggregate)
+    # ------------------------------------------------------------------
     llm_totals: Counter = Counter()
     llm_mentions: Counter = Counter()
+    llm_recs: Counter = Counter()
     for row in sightings:
-        llm = row.get("llm") or "unknown"
-        llm_totals[llm] += 1
+        llm_name = row.get("llm") or "unknown"
+        llm_totals[llm_name] += 1
         if row.get("mentioned"):
-            llm_mentions[llm] += 1
+            llm_mentions[llm_name] += 1
+        if row.get("recommendation_strength") in ("recommended", "organic"):
+            llm_recs[llm_name] += 1
 
-    llm_comparison = [
+    llm_comparison: list[LlmComparisonPoint] = [
         LlmComparisonPoint(
-            llm=llm,
-            mention_rate=round(llm_mentions[llm] / total, 4) if total else 0.0,
+            llm=llm_name,
+            mention_rate=round(llm_mentions[llm_name] / total, 4) if total else 0.0,
+            recommendation_rate=round(llm_recs[llm_name] / total, 4) if total else 0.0,
         )
-        for llm, total in llm_totals.items()
+        for llm_name, total in llm_totals.items()
     ]
+
+    # Append aggregate bar — pooled across all LLMs in the latest run
+    total_all = sum(llm_totals.values())
+    if total_all > 0:
+        llm_comparison.append(LlmComparisonPoint(
+            llm="aggregate",
+            mention_rate=round(sum(llm_mentions.values()) / total_all, 4),
+            recommendation_rate=round(sum(llm_recs.values()) / total_all, 4),
+        ))
 
     return GeoIntelligenceResponse(
         company=company,
         latest_run_at=latest["run_at"],
         kpis=kpis,
-        trends=TrendsBlock(series=series, llm_comparison=llm_comparison),
+        trends=TrendsBlock(
+            series=series,
+            llm_series=llm_series,
+            llm_comparison=llm_comparison,
+        ),
+        available_llms=available_llms,
     )
 
 
@@ -281,7 +366,7 @@ class StrategicMapsResponse(BaseModel):
     territory_map: TerritoryMapBlock
 
 
-_STRENGTH_ORDER = ["listed", "attributed", "recommended", "default", "absent"]
+_STRENGTH_ORDER = ["listed", "attributed", "recommended", "organic", "absent"]
 _TIER_ORDER = ["brand_category", "use_case", "competitor_trigger"]
 
 
@@ -291,6 +376,7 @@ _TIER_ORDER = ["brand_category", "use_case", "competitor_trigger"]
 )
 async def get_strategic_maps(
     company: str,
+    llm: Annotated[str | None, Query()] = None,
     _: None = Depends(require_auth),
 ) -> StrategicMapsResponse:
     """Return Zone 3 strategic map data: peer network and territory heatmap.
@@ -336,15 +422,17 @@ async def get_strategic_maps(
 
     run = run_resp.data[0]
 
-    # Fetch all sightings for the latest run
+    # Fetch sightings for the latest run, optionally filtered by LLM
     try:
-        sightings_resp = (
+        q = (
             db.table("brand_geo_sightings")
             .select("tier, mentioned, recommendation_strength, co_mentioned_companies")
             .eq("company", company)
             .eq("run_at", run["run_at"])
-            .execute()
         )
+        if llm:
+            q = q.eq("llm", llm)
+        sightings_resp = q.execute()
     except Exception as exc:
         logger.error("geo_sightings_query_failed", company=company, error=str(exc))
         raise HTTPException(
@@ -522,6 +610,7 @@ class ShareOfVoiceResponse(BaseModel):
 )
 async def get_share_of_voice(
     company: str,
+    llm: Annotated[str | None, Query()] = None,
     _: None = Depends(require_auth),
 ) -> ShareOfVoiceResponse:
     """Return AI Share of Voice per keyword tier for Zone 3.
@@ -567,13 +656,15 @@ async def get_share_of_voice(
 
     # Fetch sightings for latest run — only fields needed for SoV
     try:
-        sightings_resp = (
+        q = (
             db.table("brand_geo_sightings")
-            .select("tier, mentioned, co_mentioned_companies")
+            .select("tier, mentioned, co_mentioned_companies, llm")
             .eq("company", company)
             .eq("run_at", latest_run_at)
-            .execute()
         )
+        if llm:
+            q = q.eq("llm", llm)
+        sightings_resp = q.execute()
     except Exception as exc:
         logger.error("geo_sightings_query_failed", company=company, error=str(exc))
         raise HTTPException(
@@ -584,10 +675,14 @@ async def get_share_of_voice(
     sightings: list[dict] = sightings_resp.data or []
     company_name = company.split(".")[0].capitalize()
 
+    # When filtered to a single LLM, n_llms=1 → no normalisation needed.
+    # When aggregated, divide by n_llms so badge counts stay per-keyword.
+    n_llms = len({row.get("llm") for row in sightings if row.get("llm")}) or 1
+
     # ------------------------------------------------------------------
     # Aggregate per tier
-    # tier_totals:    total keyword count per tier
-    # target_counts:  how many keywords target was mentioned in, per tier
+    # tier_totals:       total sighting count per tier (= keywords × n_llms)
+    # target_counts:     mentions across all LLMs per tier
     # competitor_counts: co-mention frequency per competitor per tier
     # ------------------------------------------------------------------
     tier_totals: Counter = Counter()
@@ -613,20 +708,26 @@ async def get_share_of_voice(
 
     # ------------------------------------------------------------------
     # Build response — one SovTier per tier, top N entries
+    # Normalise counts by n_llms so badges show per-keyword figures, not
+    # per-(keyword × LLM) figures. mention_rate is computed after normalising
+    # so the denominator stays consistent with total_keywords.
     # ------------------------------------------------------------------
     tiers: list[SovTier] = []
 
     for tier in _TIER_ORDER:
-        total = tier_totals[tier]
-        if total == 0:
+        raw_total = tier_totals[tier]
+        if raw_total == 0:
             continue
+
+        total_keywords = round(raw_total / n_llms)
+        norm_target = round(target_counts[tier] / n_llms)
 
         # Target entry always included
         target_entry = SovEntry(
             company=company_name,
             is_target=True,
-            mention_count=target_counts[tier],
-            mention_rate=round(target_counts[tier] / total, 4),
+            mention_count=norm_target,
+            mention_rate=round(norm_target / total_keywords, 4) if total_keywords else 0.0,
         )
 
         # Top N-1 competitors (excluding target name if it appears in co-mentions)
@@ -634,8 +735,8 @@ async def get_share_of_voice(
             SovEntry(
                 company=name,
                 is_target=False,
-                mention_count=count,
-                mention_rate=round(count / total, 4),
+                mention_count=round(count / n_llms),
+                mention_rate=round((count / n_llms) / total_keywords, 4) if total_keywords else 0.0,
             )
             for name, count in competitor_counts[tier].most_common(_SOV_TOP_N - 1)
             if name.lower() != company_name.lower()
@@ -652,7 +753,7 @@ async def get_share_of_voice(
             SovTier(
                 tier=tier,
                 label=_TIER_LABELS.get(tier, tier),
-                total_keywords=total,
+                total_keywords=total_keywords,
                 entries=all_entries,
             )
         )
@@ -674,6 +775,14 @@ class AlertCards(BaseModel):
     counter_positioning: str | None
 
 
+class LlmKeywordResult(BaseModel):
+    llm: str
+    mentioned: bool
+    framing: str | None
+    recommendation_strength: str | None
+    exact_quote: str | None
+
+
 class KeywordRow(BaseModel):
     keyword: str
     tier: str
@@ -683,6 +792,7 @@ class KeywordRow(BaseModel):
     use_case_context: str | None
     counter_positioning: str | None
     exact_quote: str | None
+    per_llm: list[LlmKeywordResult]
 
 
 class DeepDiveResponse(BaseModel):
@@ -699,6 +809,7 @@ class DeepDiveResponse(BaseModel):
 )
 async def get_deep_dive(
     company: str,
+    llm: Annotated[str | None, Query(description="Filter keyword rows to a specific LLM provider.")] = None,
     _: None = Depends(require_auth),
 ) -> DeepDiveResponse:
     """Return Zone 5 deep dive data: alert cards, keyword table, full briefing.
@@ -740,20 +851,22 @@ async def get_deep_dive(
 
     run = run_resp.data[0]
 
-    # Fetch all keyword rows for latest run
+    # Fetch keyword rows for latest run (always all LLMs — per_llm needs them)
     try:
-        sightings_resp = (
+        query = (
             db.table("brand_geo_sightings")
             .select(
-                "keyword, tier, mentioned, framing, recommendation_strength, "
+                "keyword, tier, llm, mentioned, framing, recommendation_strength, "
                 "use_case_context, counter_positioning, context"
             )
             .eq("company", company)
             .eq("run_at", run["run_at"])
             .order("tier")
             .order("keyword")
-            .execute()
         )
+        if llm:
+            query = query.eq("llm", llm)
+        sightings_resp = query.execute()
     except Exception as exc:
         logger.error("geo_sightings_query_failed", company=company, error=str(exc))
         raise HTTPException(
@@ -763,19 +876,75 @@ async def get_deep_dive(
 
     sightings: list[dict] = sightings_resp.data or []
 
-    keyword_rows = [
-        KeywordRow(
-            keyword=row["keyword"],
-            tier=row.get("tier") or "unknown",
-            mentioned=row.get("mentioned") or False,
-            framing=row.get("framing"),
-            recommendation_strength=row.get("recommendation_strength"),
-            use_case_context=row.get("use_case_context"),
-            counter_positioning=row.get("counter_positioning"),
-            exact_quote=row.get("context"),
-        )
-        for row in sightings
-    ]
+    _strength_rank = {"organic": 4, "recommended": 3, "attributed": 2, "listed": 1}
+
+    if llm:
+        # Single LLM tab: flat rows, per_llm empty
+        keyword_rows = [
+            KeywordRow(
+                keyword=row["keyword"],
+                tier=row.get("tier") or "unknown",
+                mentioned=row.get("mentioned") or False,
+                framing=row.get("framing"),
+                recommendation_strength=row.get("recommendation_strength"),
+                use_case_context=row.get("use_case_context"),
+                counter_positioning=row.get("counter_positioning"),
+                exact_quote=row.get("context"),
+                per_llm=[],
+            )
+            for row in sightings
+        ]
+    else:
+        # All LLMs: group by keyword, build aggregate row + per_llm sub-rows
+        # run_llms determines which LLMs appear (for dimmed "not mentioned" rows)
+        run_llms: list[str] = sorted({row.get("llm") or "unknown" for row in sightings})
+
+        keyword_groups: dict[str, list[dict]] = defaultdict(list)
+        for row in sightings:
+            keyword_groups[row["keyword"]].append(row)
+
+        keyword_rows = []
+        for keyword, rows in keyword_groups.items():
+            # Best aggregate row
+            best = rows[0]
+            for row in rows[1:]:
+                if row.get("mentioned") and not best.get("mentioned"):
+                    best = row
+                elif row.get("mentioned") == best.get("mentioned"):
+                    nr = _strength_rank.get(row.get("recommendation_strength") or "", 0)
+                    cr = _strength_rank.get(best.get("recommendation_strength") or "", 0)
+                    if nr > cr:
+                        best = row
+
+            # per_llm: ALL LLMs in this run — non-mentioned ones show as dimmed
+            llm_map = {r.get("llm") or "unknown": r for r in rows}
+            per_llm = [
+                LlmKeywordResult(
+                    llm=l,
+                    mentioned=llm_map[l].get("mentioned") or False if l in llm_map else False,
+                    framing=llm_map[l].get("framing") if l in llm_map else None,
+                    recommendation_strength=(
+                        llm_map[l].get("recommendation_strength") if l in llm_map else None
+                    ),
+                    exact_quote=llm_map[l].get("context") if l in llm_map else None,
+                )
+                for l in run_llms
+            ]
+
+            keyword_rows.append(KeywordRow(
+                keyword=keyword,
+                tier=best.get("tier") or "unknown",
+                mentioned=any(r.get("mentioned") for r in rows),
+                framing=best.get("framing"),
+                recommendation_strength=best.get("recommendation_strength"),
+                use_case_context=best.get("use_case_context"),
+                counter_positioning=best.get("counter_positioning"),
+                exact_quote=best.get("context"),
+                per_llm=per_llm,
+            ))
+
+        tier_order = {"brand_category": 0, "use_case": 1, "competitor_trigger": 2}
+        keyword_rows.sort(key=lambda r: (tier_order.get(r.tier, 99), r.keyword))
 
     return DeepDiveResponse(
         company=company,

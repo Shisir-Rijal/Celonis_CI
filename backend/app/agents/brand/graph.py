@@ -10,26 +10,13 @@ Execution order:
 Issue #86: Brand Intelligence Pipeline — LangGraph foundation and manual runner
 """
 
-import asyncio
 import structlog
 
 from langgraph.graph import START, END, StateGraph
 
 from app.agents.brand.nodes.geo_intelligence import geo_intelligence_node
 from app.agents.brand.state import BrandPipelineState
-from app.agents.research.nodes import seogeo
-from app.agents.research.state import (
-    ResearchState,
-    CompetitorProfile,
-    SeoGeoData,
-    NewsData,
-    VisualsData,
-    PositioningData,
-    FinancialData,
-    SocialData,
-    EventsData,
-    NewsletterData,
-)
+from app.agents.research.state import CompetitorProfile
 
 logger = structlog.get_logger(__name__)
 
@@ -39,40 +26,20 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 async def load_profile_node(state: BrandPipelineState) -> dict:
-    """Call selected Research Agent nodes and build a CompetitorProfile.
+    """Build a CompetitorProfile for the given competitor domain.
 
-    Reads state["competitor_domain"] and state["nodes_to_run"].
-    For Phase 1 only seogeo is supported. Extend NODE_MAP as new
-    capabilities are added.
+    Capability nodes only need profile.domain. Research node data
+    (seogeo, news, etc.) is loaded on demand by each capability node
+    once the research pipeline is wired up end-to-end.
 
     Returns {"profile": CompetitorProfile} on success.
-    Returns {"errors": [...]} on failure — graph continues with profile=None.
+    Returns {"errors": [...]} on failure.
     """
     domain = state["competitor_domain"]
     logger.info("load_profile_started", domain=domain)
 
     try:
-        research_state = ResearchState(
-            competitor_domain=domain,
-            visuals=VisualsData(),
-            positioning=PositioningData(),
-            financials=FinancialData(),
-            socials=SocialData(),
-            seogeo=SeoGeoData(),
-            news=NewsData(),
-            events=EventsData(),
-            newsletter=NewsletterData(),
-            errors=[],
-            completed_nodes=[],
-        )
-
-        result = await seogeo.run(research_state)
-
-        profile = CompetitorProfile(
-            domain=domain,
-            seogeo=result.get("seogeo"),
-        )
-
+        profile = CompetitorProfile(domain=domain)
         logger.info("load_profile_done", domain=domain)
         return {"profile": profile}
 
