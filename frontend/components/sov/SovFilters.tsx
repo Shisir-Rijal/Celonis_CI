@@ -7,7 +7,6 @@ import type {
   SovFilters as SovFiltersState,
   SovPeriod,
   SovRegion,
-  SovSourceFilter,
 } from "@/lib/sov/types";
 
 // ---------------------------------------------------------------------------
@@ -31,16 +30,9 @@ const PERIOD_OPTIONS: Array<{ value: SovPeriod; label: string }> = [
   { value: "all", label: "All time" },
 ];
 
-const SOURCE_OPTIONS: Array<{ value: SovSourceFilter; label: string }> = [
-  { value: "news", label: "News" },
-  { value: "seo", label: "SEO" },
-  { value: "both", label: "Both" },
-];
-
-// Shared select style, matching EventsOverview pattern
 const SELECT_CLS =
   "text-xs border border-white/10 rounded-sm px-3 py-1.5 bg-neutral-grey-30 text-primary-white " +
-  "focus:outline-none focus:ring-1 focus:ring-secondary-green/50 cursor-pointer";
+  "focus:outline-none focus:ring-1 focus:ring-secondary-green/50 cursor-pointer w-full";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -62,10 +54,9 @@ export default function SovFilters({ filters, onChange }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-sm border border-neutral-grey-30 bg-primary-black/40 px-5 py-4">
-      {/* Top row: Period + Source */}
-      <div className="flex flex-wrap items-center gap-3">
-        <FilterLabel>Period</FilterLabel>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 rounded-sm border border-neutral-grey-30 bg-primary-black/40 px-5 py-4">
+      {/* Period */}
+      <FilterBlock label="Period">
         <select
           className={SELECT_CLS}
           value={filters.period}
@@ -77,42 +68,35 @@ export default function SovFilters({ filters, onChange }: Props) {
             </option>
           ))}
         </select>
+      </FilterBlock>
 
-        <span className="mx-2 h-4 w-px bg-neutral-grey-30" />
+      {/* Themes */}
+      <FilterBlock label="Themes">
+        <div className="flex flex-wrap gap-2">
+          {THEMES.map((theme) => (
+            <Chip
+              key={theme}
+              label={theme}
+              active={filters.themes.includes(theme)}
+              onClick={() => toggleTheme(theme)}
+            />
+          ))}
+        </div>
+      </FilterBlock>
 
-        <FilterLabel>Source</FilterLabel>
-        <SegmentedToggle
-          options={SOURCE_OPTIONS}
-          value={filters.source}
-          onChange={(v) => onChange({ ...filters, source: v })}
-        />
-      </div>
-
-      {/* Themes row */}
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterLabel className="mr-1">Themes</FilterLabel>
-        {THEMES.map((theme) => (
-          <Chip
-            key={theme}
-            label={theme}
-            active={filters.themes.includes(theme)}
-            onClick={() => toggleTheme(theme)}
-          />
-        ))}
-      </div>
-
-      {/* Regions row */}
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterLabel className="mr-1">Regions</FilterLabel>
-        {REGIONS.map((region) => (
-          <Chip
-            key={region}
-            label={region}
-            active={filters.regions.includes(region)}
-            onClick={() => toggleRegion(region)}
-          />
-        ))}
-      </div>
+      {/* Regions */}
+      <FilterBlock label="Regions">
+        <div className="flex flex-wrap gap-2">
+          {REGIONS.map((region) => (
+            <Chip
+              key={region}
+              label={region}
+              active={filters.regions.includes(region)}
+              onClick={() => toggleRegion(region)}
+            />
+          ))}
+        </div>
+      </FilterBlock>
     </div>
   );
 }
@@ -121,22 +105,20 @@ export default function SovFilters({ filters, onChange }: Props) {
 // Internal building blocks
 // ---------------------------------------------------------------------------
 
-function FilterLabel({
+function FilterBlock({
+  label,
   children,
-  className,
 }: {
+  label: string;
   children: React.ReactNode;
-  className?: string;
 }) {
   return (
-    <span
-      className={clsx(
-        "text-[11px] text-neutral-grey-20 uppercase tracking-[0.12em] font-medium",
-        className,
-      )}
-    >
+    <div className="flex flex-col gap-2">
+      <span className="text-[11px] text-neutral-grey-20 uppercase tracking-[0.12em] font-medium">
+        {label}
+      </span>
       {children}
-    </span>
+    </div>
   );
 }
 
@@ -162,36 +144,5 @@ function Chip({
     >
       {label}
     </button>
-  );
-}
-
-function SegmentedToggle<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: Array<{ value: T; label: string }>;
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="inline-flex rounded-sm border border-white/10 overflow-hidden">
-      {options.map((o, i) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={clsx(
-            "text-xs px-3 py-1.5 transition-colors cursor-pointer",
-            i > 0 && "border-l border-white/10",
-            value === o.value
-              ? "bg-secondary-green/15 text-secondary-green"
-              : "text-neutral-grey-10 hover:text-primary-white hover:bg-white/5",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
   );
 }

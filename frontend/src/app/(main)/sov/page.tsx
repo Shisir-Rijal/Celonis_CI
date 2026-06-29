@@ -12,6 +12,7 @@ import SovThemeBreakdown from "@components/sov/SovThemeBreakdown";
 import SovRegionChart from "@components/sov/SovRegionChart";
 import SovTrendingAlerts from "@components/sov/SovTrendingAlerts";
 import SovMentionList from "@components/sov/SovMentionList";
+import ActiveFiltersBadge from "@components/sov/ActiveFiltersBadge";
 import { applyFilters, hasActiveFilter } from "@/lib/sov/analysis";
 import { useSov } from "@/lib/sov/hooks";
 import { useCompetitorColors } from "@/lib/competitors/hooks";
@@ -105,6 +106,7 @@ export default function SovPage() {
         <SectionHeader
           label="At a glance"
           description="Total mentions, leading competitor, dominant theme and active companies in the selected period."
+          action={<ActiveFiltersBadge filters={filters} />}
         />
         <SovKpis mentions={filteredMentions} totalCompanies={allCompanies.length} />
       </section>
@@ -114,6 +116,7 @@ export default function SovPage() {
         <SectionHeader
           label="Share of Voice"
           description="Each competitor's share of all relevant mentions in the selected period."
+          action={<ActiveFiltersBadge filters={filters} />}
         />
         <SovShareDonut
           mentions={filteredMentions}
@@ -127,6 +130,7 @@ export default function SovPage() {
         <SectionHeader
           label="Trend over time"
           description="Mentions per month per competitor — who's gaining, who's losing visibility."
+          action={<ActiveFiltersBadge filters={filters} />}
         />
         <SovTrendChart
           mentions={filteredMentions}
@@ -140,6 +144,7 @@ export default function SovPage() {
         <SectionHeader
           label="Themes"
           description="Which competitor dominates which theme — Process Mining, Agentic AI, ERP & SAP and others."
+          action={<ActiveFiltersBadge filters={filters} />}
         />
         <SovThemeBreakdown
           mentions={filteredMentions}
@@ -153,6 +158,7 @@ export default function SovPage() {
         <SectionHeader
           label="Regions"
           description="DACH, Europe, NA, APAC and Global mention volumes — note that SEO mentions are always Global."
+          action={<ActiveFiltersBadge filters={filters} />}
         />
         <SovRegionChart mentions={filteredMentions} />
       </section>
@@ -162,6 +168,7 @@ export default function SovPage() {
         <SectionHeader
           label="Trending themes"
           description="Topics gaining and losing momentum compared to the previous month."
+          action={<ActiveFiltersBadge filters={filters} />}
         />
         <SovTrendingAlerts mentions={filteredMentions} />
       </section>
@@ -171,6 +178,7 @@ export default function SovPage() {
         <SectionHeader
           label="Mentions"
           description="All individual mentions with title, themes, region and source — filterable above."
+          action={<ActiveFiltersBadge filters={filters} />}
         />
         <SovMentionList
           mentions={filteredMentions}

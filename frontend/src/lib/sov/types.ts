@@ -46,18 +46,14 @@ export type SovListResponse = {
 
 export type SovPeriod = "1m" | "3m" | "6m" | "ytd" | "all";
 
-export type SovSourceFilter = "news" | "seo" | "both";
-
 export type SovFilters = {
   period: SovPeriod;
   themes: string[];        // empty = all
   regions: SovRegion[];    // empty = all
-  source: SovSourceFilter;
 };
 
 export const DEFAULT_SOV_FILTERS: SovFilters = {
   period: "3m",
   themes: [],
   regions: [],
-  source: "news",          // News-only by default — see plan §9
 };
