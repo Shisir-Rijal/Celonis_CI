@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import NavButton from "./NavButton";
@@ -16,7 +16,7 @@ const TOPIC_MAP: Record<string, "news" | "events" | "geo" | "branding" | "sov"> 
   "/sov": "sov",
 };
 
-export default function NavBar() {
+function NavBarInner() {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -85,5 +85,13 @@ export default function NavBar() {
 
       <MobileMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
     </>
+  );
+}
+
+export default function NavBar() {
+  return (
+    <Suspense>
+      <NavBarInner />
+    </Suspense>
   );
 }
