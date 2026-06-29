@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { KeywordRow } from "@/lib/brand/types";
+import type { KeywordRow, LlmKeywordResult } from "@/lib/brand/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -20,7 +20,7 @@ const STRENGTH_LABELS: Record<string, string> = {
   listed: "Listed",
   attributed: "Attributed",
   recommended: "Recommended",
-  default: "Default",
+  organic: "Organic",
 };
 
 const FRAMING_LABELS: Record<string, string> = {
@@ -29,7 +29,19 @@ const FRAMING_LABELS: Record<string, string> = {
   visionary: "Visionary",
 };
 
+const LLM_LABELS: Record<string, string> = {
+  "gpt-5.5": "GPT-5.5",
+  "gpt-4o-mini": "GPT-4o mini",
+  "gpt-4o": "GPT-4o",
+  "claude-sonnet-4-6": "Claude Sonnet",
+  "sonar-pro": "Perplexity",
+};
+
 const FONT = { fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" };
+
+function labelLlm(raw: string) {
+  return LLM_LABELS[raw] ?? raw;
+}
 
 // ---------------------------------------------------------------------------
 // Badge helpers
@@ -43,7 +55,7 @@ function MentionedBadge({ mentioned }: { mentioned: boolean }) {
           "inline-flex items-center gap-1 text-[10px] font-medium rounded-full px-2 py-0.5",
           mentioned
             ? "bg-success/10 text-success"
-            : "bg-neutral-grey-00 text-neutral-grey-20"
+            : "bg-error/10 text-error"
         )
       )}
     >
@@ -51,7 +63,7 @@ function MentionedBadge({ mentioned }: { mentioned: boolean }) {
         className={twMerge(
           clsx(
             "w-1.5 h-1.5 rounded-full",
-            mentioned ? "bg-success" : "bg-neutral-grey-10"
+            mentioned ? "bg-success" : "bg-error"
           )
         )}
       />
@@ -93,6 +105,172 @@ function StrengthBadge({ strength }: { strength: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// LLM sub-row — always visible, dimmed if not mentioned
+// ---------------------------------------------------------------------------
+
+function LlmSubRow({ result }: { result: LlmKeywordResult }) {
+  const [quoteOpen, setQuoteOpen] = useState(false);
+
+  return (
+    <>
+      <tr
+        className={twMerge(
+          clsx(
+            "text-xs border-b border-white/4 transition-opacity",
+            !result.mentioned && "opacity-35"
+          )
+        )}
+      >
+        {/* LLM name — indented */}
+        <td className="py-1.5 pr-4 pl-6">
+          <span className="text-neutral-grey-10 font-mono text-[10px]">
+            ↳ {labelLlm(result.llm)}
+          </span>
+        </td>
+
+        {/* Tier — blank (inherited from parent row) */}
+        <td />
+
+        {/* Mentioned */}
+        <td className="py-1.5 pr-4">
+          <MentionedBadge mentioned={result.mentioned} />
+        </td>
+
+        {/* Strength */}
+        <td className="py-1.5 pr-4">
+          <StrengthBadge strength={result.recommendation_strength} />
+        </td>
+
+        {/* Framing */}
+        <td className="py-1.5 pr-4 text-neutral-grey-20">
+          {result.framing ? (FRAMING_LABELS[result.framing] ?? result.framing) : "—"}
+        </td>
+
+        {/* Excerpt toggle */}
+        <td className="py-1.5">
+          {result.exact_quote ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setQuoteOpen((o) => !o);
+              }}
+              className="text-[10px] text-neutral-grey-10 hover:text-primary-white transition-colors cursor-pointer"
+            >
+              {quoteOpen ? "▲ hide" : "▼ excerpt"}
+            </button>
+          ) : (
+            <span className="text-neutral-grey-10">—</span>
+          )}
+        </td>
+      </tr>
+
+      {/* Expandable excerpt */}
+      {quoteOpen && result.exact_quote && (
+        <tr className="bg-white/3">
+          <td colSpan={6} className="py-2 pl-10 pr-4">
+            <p
+              className="text-[11px] text-neutral-grey-10 leading-relaxed italic border-l-2 border-neutral-grey-20 pl-3"
+              style={FONT}
+            >
+              {result.exact_quote}
+            </p>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main keyword row
+// When per_llm is populated → always-visible sub-rows, no expandable quote on
+// the aggregate row.
+// When per_llm is empty (single-LLM flat view) → expandable quote on this row.
+// ---------------------------------------------------------------------------
+
+function KeywordTableRow({ row }: { row: KeywordRow }) {
+  const [open, setOpen] = useState(false);
+  const hasSubRows = (row.per_llm?.length ?? 0) > 0;
+  const hasQuote = !hasSubRows && Boolean(row.exact_quote);
+
+  return (
+    <>
+      <tr
+        className={twMerge(
+          clsx(
+            "border-b border-white/8 text-sm",
+            hasSubRows && "bg-white/2",
+            hasQuote && "cursor-pointer hover:bg-white/5"
+          )
+        )}
+        onClick={() => hasQuote && setOpen((o) => !o)}
+        title={hasQuote ? "Click to see AI response excerpt" : undefined}
+      >
+        {/* Keyword */}
+        <td className="py-2.5 pr-4">
+          <span className="font-medium text-primary-white">{row.keyword}</span>
+          {hasQuote && (
+            <span className="ml-1.5 text-[10px] text-neutral-grey-10">
+              {open ? "▲" : "▼"}
+            </span>
+          )}
+        </td>
+
+        {/* Tier */}
+        <td className="py-2.5 pr-4">
+          <TierBadge tier={row.tier} />
+        </td>
+
+        {/* Mentioned */}
+        <td className="py-2.5 pr-4">
+          <MentionedBadge mentioned={row.mentioned} />
+        </td>
+
+        {/* Strength */}
+        <td className="py-2.5 pr-4">
+          <StrengthBadge strength={row.recommendation_strength} />
+        </td>
+
+        {/* Framing */}
+        <td className="py-2.5 pr-4 text-xs text-neutral-grey-20">
+          {row.framing ? (FRAMING_LABELS[row.framing] ?? row.framing) : "—"}
+        </td>
+
+        {/* Counter-positioning */}
+        <td className="py-2.5 text-xs text-neutral-grey-20 max-w-[200px]">
+          {row.counter_positioning ? (
+            <span className="text-warning">{row.counter_positioning}</span>
+          ) : (
+            "—"
+          )}
+        </td>
+      </tr>
+
+      {/* Expandable quote — only when no sub-rows */}
+      {open && row.exact_quote && (
+        <tr className="bg-white/5">
+          <td colSpan={6} className="py-3 px-4">
+            <p
+              className="text-xs text-neutral-grey-10 leading-relaxed italic border-l-2 border-neutral-grey-20 pl-3"
+              style={FONT}
+            >
+              {row.exact_quote}
+            </p>
+          </td>
+        </tr>
+      )}
+
+      {/* Per-LLM sub-rows — always visible when aggregated view */}
+      {hasSubRows &&
+        row.per_llm?.map((result) => (
+          <LlmSubRow key={`${row.keyword}-${result.llm}`} result={result} />
+        ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Filter bar
 // ---------------------------------------------------------------------------
 
@@ -110,10 +288,7 @@ function FilterBar({
   onChange: (f: Filters) => void;
 }) {
   return (
-    <div
-      className="flex flex-wrap items-center gap-3 mb-4"
-      style={FONT}
-    >
+    <div className="flex flex-wrap items-center gap-3 mb-4" style={FONT}>
       <span className="text-[11px] text-neutral-grey-20 uppercase tracking-[0.12em] font-medium">
         Filter
       </span>
@@ -148,7 +323,7 @@ function FilterBar({
         <option value="listed">Listed</option>
         <option value="attributed">Attributed</option>
         <option value="recommended">Recommended</option>
-        <option value="default">Default</option>
+        <option value="organic">Organic</option>
       </select>
 
       {(filters.tier || filters.mentioned || filters.strength) && (
@@ -161,83 +336,6 @@ function FilterBar({
         </button>
       )}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Row with expandable quote
-// ---------------------------------------------------------------------------
-
-function KeywordTableRow({ row }: { row: KeywordRow }) {
-  const [open, setOpen] = useState(false);
-  const hasQuote = Boolean(row.exact_quote);
-
-  return (
-    <>
-      <tr
-        className={twMerge(
-          clsx(
-            "border-b border-white/8 text-sm",
-            hasQuote ? "cursor-pointer hover:bg-white/5" : ""
-          )
-        )}
-        onClick={() => hasQuote && setOpen((o) => !o)}
-        title={hasQuote ? "Click to see AI response excerpt" : undefined}
-      >
-        {/* Keyword */}
-        <td className="py-2.5 pr-4">
-          <span className="font-medium text-primary-white">{row.keyword}</span>
-          {hasQuote && (
-            <span className="ml-1.5 text-[10px] text-neutral-grey-10">
-              {open ? "▲" : "▼"}
-            </span>
-          )}
-        </td>
-
-        {/* Tier */}
-        <td className="py-2.5 pr-4">
-          <TierBadge tier={row.tier} />
-        </td>
-
-        {/* Mentioned */}
-        <td className="py-2.5 pr-4">
-          <MentionedBadge mentioned={row.mentioned} />
-        </td>
-
-        {/* Strength */}
-        <td className="py-2.5 pr-4">
-          <StrengthBadge strength={row.recommendation_strength} />
-        </td>
-
-        {/* Framing */}
-        <td className="py-2.5 pr-4 text-xs text-neutral-grey-20">
-          {row.framing ? FRAMING_LABELS[row.framing] ?? row.framing : "—"}
-        </td>
-
-        {/* Counter-positioning */}
-        <td className="py-2.5 text-xs text-neutral-grey-20 max-w-[200px]">
-          {row.counter_positioning ? (
-            <span className="text-warning">{row.counter_positioning}</span>
-          ) : (
-            "—"
-          )}
-        </td>
-      </tr>
-
-      {/* Expandable quote row */}
-      {open && row.exact_quote && (
-        <tr className="bg-white/5">
-          <td colSpan={6} className="py-3 px-4">
-            <p
-              className="text-xs text-neutral-grey-10 leading-relaxed italic border-l-2 border-neutral-grey-20 pl-3"
-              style={FONT}
-            >
-              {row.exact_quote}
-            </p>
-          </td>
-        </tr>
-      )}
-    </>
   );
 }
 
@@ -255,6 +353,8 @@ export default function KeywordTable({ rows }: KeywordTableProps) {
     mentioned: "",
     strength: "",
   });
+
+  const hasSubRows = rows.some((r) => (r.per_llm?.length ?? 0) > 0);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -305,7 +405,10 @@ export default function KeywordTable({ rows }: KeywordTableProps) {
 
       <p className="mt-3 text-[11px] text-neutral-grey-20">
         {filtered.length} of {rows.length} keywords
-        {filtered.length < rows.length ? " (filtered)" : ""} · Click a row to see the AI response excerpt
+        {filtered.length < rows.length ? " (filtered)" : ""}
+        {hasSubRows
+          ? " · Dimmed rows = not mentioned by that LLM · Click excerpt to expand"
+          : " · Click a row to see the AI response excerpt"}
       </p>
     </div>
   );

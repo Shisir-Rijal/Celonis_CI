@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { ArrowUp, ArrowDown, Minus } from "lucide-react";
@@ -9,6 +12,7 @@ type KpiTileProps = {
   value: string | number;
   suffix?: string;
   subtitle?: string;
+  tooltip?: string;
   delta?: {
     value: number;
     direction?: DeltaDirection;
@@ -35,22 +39,17 @@ const directionIcons: Record<DeltaDirection, React.ReactNode> = {
   flat: <Minus size={12} strokeWidth={2.5} />,
 };
 
-/**
- * KPI tile — uppercase label, big number, subtitle, optional delta strip
- * at the bottom. Light surface, generous internal proximity so label and
- * number read as one unit.
- *
- * `highlight=true` adds a thin green accent bar at the top, marking a
- * "hero" tile (e.g. GEO Score) without colouring the number.
- */
 export default function KpiTile({
   label,
   value,
   suffix,
   subtitle,
+  tooltip,
   delta,
   highlight = false,
 }: KpiTileProps) {
+  const [tipOpen, setTipOpen] = useState(false);
+
   const direction = delta
     ? delta.direction ?? inferDirection(delta.value)
     : null;
@@ -59,8 +58,8 @@ export default function KpiTile({
     <div
       className={twMerge(
         clsx(
-          "relative overflow-hidden rounded-xl border border-black/5 bg-primary-white p-6",
-          "shadow-[0_1px_2px_rgba(0,0,0,0.04)] flex flex-col gap-2 min-h-[170px]"
+          "relative rounded-sm border-2 border-neutral-grey-30 p-6",
+          "flex flex-col gap-2 min-h-[170px]"
         )
       )}
     >
@@ -68,29 +67,53 @@ export default function KpiTile({
         <div className="absolute top-0 left-0 right-0 h-[3px] bg-secondary-green" />
       ) : null}
 
-      {/* Tightly grouped: label + value + subtitle (proximity) */}
-      <div className="flex flex-col gap-2">
+      {/* Label row — with optional info icon */}
+      <div className="flex items-center gap-1.5">
         <span className="text-[11px] tracking-[0.16em] uppercase text-neutral-grey-20 font-medium">
           {label}
         </span>
-
-        <div className="flex items-baseline gap-1">
-          <span className="text-[44px] leading-none font-medium tracking-tight text-primary-black">
-            {value}
+        {tooltip ? (
+          <span className="relative flex items-center">
+            <button
+              type="button"
+              className="w-3.5 h-3.5 rounded-full border border-neutral-grey-20 flex items-center justify-center text-[8px] font-semibold text-neutral-grey-20 hover:border-neutral-grey-10 hover:text-neutral-grey-10 transition-colors cursor-default leading-none"
+              onMouseEnter={() => setTipOpen(true)}
+              onMouseLeave={() => setTipOpen(false)}
+              aria-label={`Info: ${label}`}
+            >
+              i
+            </button>
+            {tipOpen && (
+              <div
+                className="absolute bottom-full left-0 mb-2 z-50 w-60 rounded-lg border border-white/10 bg-neutral-grey-00 px-3 py-2.5 shadow-xl"
+                style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}
+              >
+                <p className="text-[11px] text-primary-black leading-relaxed">
+                  {tooltip}
+                </p>
+              </div>
+            )}
           </span>
-          {suffix ? (
-            <span className="text-lg text-neutral-grey-20 font-normal">
-              {suffix}
-            </span>
-          ) : null}
-        </div>
-
-        {subtitle ? (
-          <span className="text-xs text-neutral-grey-20">{subtitle}</span>
         ) : null}
       </div>
 
-      {/* Delta sits visually separated at the bottom */}
+      {/* Value + suffix */}
+      <div className="flex items-baseline gap-1">
+        <span className="text-[44px] leading-none font-medium tracking-tight text-primary-white">
+          {value}
+        </span>
+        {suffix ? (
+          <span className="text-lg text-neutral-grey-20 font-normal">
+            {suffix}
+          </span>
+        ) : null}
+      </div>
+
+      {subtitle ? (
+        <span className="text-xs text-neutral-grey-20">{subtitle}</span>
+      ) : null}
+
+      {/* Delta */}
       {delta && direction ? (
         <div className="mt-auto pt-3">
           <div

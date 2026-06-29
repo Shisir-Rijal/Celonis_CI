@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, Suspense } from "react";
 
 import SectionHeader from "@components/geo/SectionHeader";
 import PageToolbar from "@components/geo/PageToolbar";
@@ -15,6 +15,7 @@ import { useNewsList } from "@/lib/news/hooks";
 import { groupAndSortArticles } from "@/lib/news/groupArticles";
 import { useCompetitorColors } from "@/lib/competitors/hooks";
 import type { NewsArticle } from "@/lib/news/types";
+import ExportButton from "@components/report/ExportButton";
 
 function parseCompanies(param: string | null): string[] {
   if (!param) return [];
@@ -82,7 +83,7 @@ function filterArticles(
   });
 }
 
-export default function NewsPage() {
+function NewsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: brandColors = {} } = useCompetitorColors();
@@ -96,7 +97,6 @@ export default function NewsPage() {
   const selectedSource = (searchParams.get("source") ?? "all") as SourceType;
   const selectedTopic = searchParams.get("topic") ?? "all";
 
-  // Single API call — all filtering done client-side
   const { data: allData, isLoading, isError, error } = useNewsList([]);
 
   function updateParams(updates: Record<string, string | null>) {
@@ -136,7 +136,6 @@ export default function NewsPage() {
 
   const allDomains = useMemo(() => allOptions.map((o) => o.domain), [allOptions]);
 
-  // Filter companies by selected chips (client-side)
   const visibleCompanies = useMemo(() => {
     if (!allData) return [];
     return allData.companies.filter(
@@ -198,7 +197,10 @@ export default function NewsPage() {
             Latest articles and press coverage across tracked competitors.
           </p>
         </div>
-        <PageToolbar runtime="Daily" updatedAt={formatRelativeTime(mostRecentRunAt)} />
+        <PageToolbar
+          runtime="Daily"
+          updatedAt={formatRelativeTime(mostRecentRunAt)}
+        />
       </header>
 
       {/* Insight charts */}
@@ -315,5 +317,13 @@ export default function NewsPage() {
             })}
       </section>
     </div>
+  );
+}
+
+export default function NewsPage() {
+  return (
+    <Suspense>
+      <NewsPageInner />
+    </Suspense>
   );
 }

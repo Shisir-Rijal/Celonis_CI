@@ -35,24 +35,24 @@ export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
     name: n.id,
     value: n.weight,
     symbolSize: n.is_target
-      ? 36
-      : Math.max(10, Math.round(10 + (n.weight / maxWeight) * 22)),
+      ? 38
+      : Math.max(12, Math.round(12 + (n.weight / maxWeight) * 20)),
     itemStyle: {
       color: n.is_target
         ? "#5CFE50"
         : primary_peer_group.has(n.id)
         ? "#3233F5"
-        : "#CBCBCB",
-      borderColor: n.is_target ? "#16a34a" : "#ffffff",
-      borderWidth: 2,
+        : "#4B4B4B",
+      borderColor: n.is_target ? "#16a34a" : "rgba(255,255,255,0.15)",
+      borderWidth: 1.5,
     },
     isTarget: n.is_target,
     label: {
-      show: n.is_target || n.weight >= 6,
-      color: "#1D1D1D",
+      show: n.is_target || n.weight >= 4,
+      color: n.is_target ? "#0D0D0D" : "#E5E5E5",
       fontSize: 11,
       fontFamily: CHART_FONT,
-      fontWeight: n.is_target ? 600 : 400,
+      fontWeight: n.is_target ? 700 : 400,
       formatter: (p: { name: string }) =>
         p.name.length > 16 ? p.name.slice(0, 14) + "…" : p.name,
     },
@@ -63,14 +63,16 @@ export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
     target: l.target,
     value: l.weight,
     lineStyle: {
-      width: Math.max(1, Math.round(l.weight * 0.5)),
-      color: "#e5e5e5",
+      // Cap at 4px — high co-mention counts otherwise produce absurdly thick edges
+      width: Math.min(4, Math.max(1, Math.round(l.weight * 0.3))),
+      color: "rgba(255,255,255,0.18)",
       curveness: 0,
-      opacity: 0.8,
+      opacity: 0.9,
     },
   }));
 
   const option = {
+    backgroundColor: "transparent",
     tooltip: {
       trigger: "item",
       formatter: (p: { data: { name: string; value?: number; isTarget?: boolean } }) => {
@@ -79,14 +81,15 @@ export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
         const sublabel = p.data.isTarget
           ? `Mentioned in <b>${count}</b> of 30 keywords`
           : `Co-mentioned in <b>${count}</b> keyword${count !== 1 ? "s" : ""} alongside Celonis`;
-        return `<span style="font-family:${CHART_FONT};font-size:12px">
+        return `<div style="font-family:${CHART_FONT};font-size:12px">
           <b>${p.data.name}</b><br/><span style="color:#767676;font-size:11px">${sublabel}</span>
-        </span>`;
+        </div>`;
       },
-      backgroundColor: "#fff",
-      borderColor: "rgba(0,0,0,0.08)",
+      backgroundColor: "#1a1a1a",
+      borderColor: "rgba(255,255,255,0.1)",
       borderWidth: 1,
-      extraCssText: "box-shadow:0 2px 8px rgba(0,0,0,0.08);border-radius:8px;",
+      textStyle: { color: "#E5E5E5" },
+      extraCssText: "box-shadow:0 4px 12px rgba(0,0,0,0.4);border-radius:8px;padding:8px 12px;",
     },
     series: [
       {
@@ -97,16 +100,16 @@ export default function PeerNetworkChart({ data }: PeerNetworkChartProps) {
         roam: true,
         draggable: true,
         force: {
-          repulsion: 180,
-          gravity: 0.1,
-          edgeLength: [30, 200],
+          repulsion: 200,
+          gravity: 0.12,
+          edgeLength: [40, 180],
           layoutAnimation: true,
         },
         emphasis: {
           focus: "adjacency",
-          lineStyle: { width: 3 },
+          lineStyle: { width: 2, color: "rgba(255,255,255,0.5)" },
         },
-        lineStyle: { opacity: 0.6 },
+        lineStyle: { opacity: 0.7 },
       },
     ],
   };
