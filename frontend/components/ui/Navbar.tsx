@@ -41,14 +41,12 @@ function NavBarInner() {
         </div>
 
         <div className="flex flex-row flex-1 justify-center gap-2">
-          <NavButton text="Home" href="/" />
+          <NavButton text="Chatbot" href="/chatbot" />
           <NavButton text="Branding" href="/branding" />
           <NavButton text="GEO" href="/brand/geo-intelligence" />
           <NavButton text="Events" href="/events" />
           <NavButton text="News" href="/news" />
           <NavButton text="SoV" href="/sov" />
-          <NavButton text="Chatbot" href="/chatbot" />
-          <NavButton text="Settings" href="/settings" />
         </div>
 
         {topic ? (
