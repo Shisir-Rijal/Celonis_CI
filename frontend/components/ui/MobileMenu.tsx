@@ -44,16 +44,10 @@ export default function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
 
         {/* Nav Items */}
         <div className="flex flex-col gap-1 flex-1">
-          <NavButton text="Home" href="/" onClick={onClose} />
+          <NavButton text="Chatbot" href="/chatbot" onClick={onClose} />
           <NavButton text="GEO" href="/brand/geo-intelligence" onClick={onClose} />
           <NavButton text="News" href="/news" onClick={onClose} />
           <NavButton text="SoV" href="/sov" onClick={onClose} />
-          <NavButton text="Chatbot" href="/chatbot" onClick={onClose} />
-        </div>
-
-        {/* Bottom */}
-        <div className="flex flex-col gap-2">
-          <NavButton text="Settings" href="/settings" onClick={onClose} />
         </div>
       </div>
     </>
