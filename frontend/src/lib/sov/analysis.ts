@@ -52,11 +52,6 @@ export function applyFilters(mentions: SovMention[], filters: SovFilters): SovMe
       if (Number.isNaN(d.getTime()) || d < cutoff) return false;
     }
 
-    // Source
-    if (filters.source !== "both" && m.source_type !== filters.source) {
-      return false;
-    }
-
     // Themes — at least one of the mention's themes must be selected
     if (themeSet.size > 0 && !m.themes.some((t) => themeSet.has(t))) {
       return false;
@@ -79,8 +74,7 @@ export function hasActiveFilter(filters: SovFilters): boolean {
   return (
     filters.period !== "3m" ||
     filters.themes.length > 0 ||
-    filters.regions.length > 0 ||
-    filters.source !== "news"
+    filters.regions.length > 0
   );
 }
 
