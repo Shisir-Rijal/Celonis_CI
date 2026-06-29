@@ -8,11 +8,12 @@ import MobileMenu from "./MobileMenu";
 import { Menu } from "lucide-react";
 import ExportButton from "@components/report/ExportButton";
 
-const TOPIC_MAP: Record<string, "news" | "events" | "geo" | "branding"> = {
+const TOPIC_MAP: Record<string, "news" | "events" | "geo" | "branding" | "sov"> = {
   "/news": "news",
   "/events": "events",
   "/brand/geo-intelligence": "geo",
   "/branding": "branding",
+  "/sov": "sov",
 };
 
 export default function NavBar() {

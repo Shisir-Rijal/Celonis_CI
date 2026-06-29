@@ -11,7 +11,7 @@ import { useReportGeneration } from "@/lib/report/hooks";
 import ReportModal from "./ReportModal";
 
 interface ExportButtonProps {
-  topic: "news" | "events" | "geo" | "branding";
+  topic: "news" | "events" | "geo" | "branding" | "sov";
   companies?: string[];
 }
 

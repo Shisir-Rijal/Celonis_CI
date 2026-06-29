@@ -16,7 +16,7 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-VALID_TOPICS = {"news", "events", "geo", "branding"}
+VALID_TOPICS = {"news", "events", "geo", "branding", "sov"}
 
 
 # ---------------------------------------------------------------------------

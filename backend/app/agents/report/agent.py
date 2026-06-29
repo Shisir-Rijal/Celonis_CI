@@ -14,6 +14,8 @@ from .prompts.news import build_news_prompt
 from .prompts.events import build_events_prompt
 from .prompts.geo import build_geo_prompt
 from .prompts.branding import build_branding_prompt
+from .loaders.sov import SovReportLoader
+from .prompts.sov import build_sov_prompt
 
 logger = structlog.get_logger(__name__)
 
@@ -22,6 +24,7 @@ LOADERS = {
     "events": EventsReportLoader,
     "geo": GeoReportLoader,
     "branding": BrandingReportLoader,
+    "sov": SovReportLoader,
 }
 
 PROMPT_BUILDERS = {
@@ -29,6 +32,7 @@ PROMPT_BUILDERS = {
     "events": build_events_prompt,
     "geo": build_geo_prompt,
     "branding": build_branding_prompt,
+    "sov": build_sov_prompt,
 }
 
 
