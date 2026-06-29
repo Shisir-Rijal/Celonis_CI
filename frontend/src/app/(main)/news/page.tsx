@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, Suspense } from "react";
 
 import SectionHeader from "@components/geo/SectionHeader";
 import PageToolbar from "@components/geo/PageToolbar";
@@ -83,7 +83,7 @@ function filterArticles(
   });
 }
 
-export default function NewsPage() {
+function NewsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: brandColors = {} } = useCompetitorColors();
@@ -317,5 +317,13 @@ export default function NewsPage() {
             })}
       </section>
     </div>
+  );
+}
+
+export default function NewsPage() {
+  return (
+    <Suspense>
+      <NewsPageInner />
+    </Suspense>
   );
 }

@@ -31,10 +31,18 @@ export type TrendPoint = {
 export type LlmComparisonPoint = {
   llm: string;
   mention_rate: number;
+  recommendation_rate: number;
+};
+
+export type LlmTrendPoint = {
+  run_at: string;
+  llm: string;
+  mention_rate: number;
 };
 
 export type TrendsBlock = {
   series: TrendPoint[];
+  llm_series: LlmTrendPoint[];
   llm_comparison: LlmComparisonPoint[];
 };
 
@@ -43,6 +51,7 @@ export type GeoIntelligenceResponse = {
   latest_run_at: string;
   kpis: KpiBlock;
   trends: TrendsBlock;
+  available_llms: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -132,6 +141,14 @@ export type AlertCards = {
   counter_positioning: string | null;
 };
 
+export type LlmKeywordResult = {
+  llm: string;
+  mentioned: boolean;
+  framing: string | null;
+  recommendation_strength: string | null;
+  exact_quote: string | null;
+};
+
 export type KeywordRow = {
   keyword: string;
   tier: string;
@@ -141,6 +158,7 @@ export type KeywordRow = {
   use_case_context: string | null;
   counter_positioning: string | null;
   exact_quote: string | null;
+  per_llm: LlmKeywordResult[];
 };
 
 export type DeepDiveResponse = {

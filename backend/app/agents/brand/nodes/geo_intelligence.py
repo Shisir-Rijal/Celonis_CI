@@ -2,29 +2,34 @@
 
 GEO Intelligence capability node for the Brand Intelligence Pipeline.
 
-Execution:
-  1. Query GPT-4o-mini for all 30 brand keywords in parallel (Semaphore 5).
-  2. Run structured analysis (GeoAnalysisOutput) for all keywords in parallel.
-     Non-mentions get co_mentioned_companies + use_case_context; classification
-     fields are null by schema design.
-  3. Apply post-processing consistency rule: framing=null when
-     recommendation_strength=listed (prevents list-preamble misclassification).
-  4. Persist all rows to brand_geo_sightings via bulk insert.
-  5. Run synthesis call (o4-mini) over all results → GeoSynthesisOutput.
+Execution per configured LLM provider (GPT-4o, Claude Sonnet, Perplexity sonar-pro):
+  1. Query each provider for all 30 brand keywords in parallel (Semaphore 5).
+  2. Analyse each provider's responses with GPT-4o structured output
+     (GeoAnalysisOutput) — same analysis model for all providers so results
+     are comparable.
+  3. Apply consistency rule: framing=null when recommendation_strength=listed.
+  4. Persist all rows to brand_geo_sightings (llm column identifies provider).
+  5. Run synthesis with o4-mini over all sightings → GeoSynthesisOutput.
   6. Return CapabilityResult.
 
-Issue #90: GEO Intelligence backend
+Active providers are determined by API keys in settings. OpenAI is always
+active. Claude and Perplexity are opt-in (see geo_providers.py).
 """
 
 import asyncio
-import json
 import structlog
 from datetime import datetime, timezone
 from typing import Any
 
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 
 from app.agents.brand.capability import CapabilityResult
+from app.agents.brand.geo_providers import (
+    GeoQueryProvider,
+    build_analysis_llm,
+    build_query_providers,
+    build_synthesis_llm,
+)
 from app.agents.brand.keywords import ALL_BRAND_KEYWORDS, KEYWORD_TIER
 from app.agents.brand.repositories.geo_repository import (
     GeoSightingRow,
@@ -32,7 +37,6 @@ from app.agents.brand.repositories.geo_repository import (
     insert_geo_sightings,
 )
 from app.agents.brand.state import BrandPipelineState
-from app.config import get_settings
 from app.prompts.brand.geo_analysis import (
     GeoAnalysisOutput,
     build_geo_analysis_messages,
@@ -46,28 +50,11 @@ logger = structlog.get_logger(__name__)
 
 _GEO_QUERY_SEMAPHORE = asyncio.Semaphore(5)
 _ANALYSIS_SEMAPHORE = asyncio.Semaphore(5)
-_LLM_MODEL = "gpt-4o-mini"
-_SYNTHESIS_MODEL = "o4-mini"
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _build_llm(model: str, temperature: float = 0.0) -> ChatOpenAI:
-    """Build a ChatOpenAI instance from project settings."""
-    settings = get_settings()
-    return ChatOpenAI(
-        model=model,
-        temperature=temperature,
-        api_key=settings.OPENAI_API_KEY,
-        base_url=settings.OPENAI_BASE_URL or "https://api.openai.com/v1",
-    )
 
 
 async def _query_geo_keyword(
     keyword: str,
-    llm: ChatOpenAI,
+    llm: BaseChatModel,
 ) -> str:
     """Ask GPT what companies are known for this keyword.
 
@@ -173,88 +160,122 @@ async def geo_intelligence_node(state: BrandPipelineState) -> dict:
 
     try:
         # ------------------------------------------------------------------
-        # Phase 1 — GEO queries: ask GPT what companies lead each keyword
+        # Build shared analysis LLM once (used for all providers)
         # ------------------------------------------------------------------
-        query_llm = _build_llm(_LLM_MODEL, temperature=0.0)
-
-        raw_responses: dict[str, str] = {}
-        query_tasks = {
-            kw: _query_geo_keyword(kw, query_llm)
-            for kw in ALL_BRAND_KEYWORDS
-        }
-        query_results = await asyncio.gather(
-            *query_tasks.values(), return_exceptions=True
-        )
-        for keyword, result in zip(query_tasks.keys(), query_results):
-            if isinstance(result, Exception):
-                logger.warning("geo_query_failed", keyword=keyword, error=str(result))
-                raw_responses[keyword] = ""
-            else:
-                raw_responses[keyword] = result
-
-        logger.info("geo_queries_done", company=company, total=len(ALL_BRAND_KEYWORDS))
-
-        # ------------------------------------------------------------------
-        # Phase 2 — Structured analysis for all keywords
-        # ------------------------------------------------------------------
-        analysis_llm = _build_llm(_LLM_MODEL, temperature=0.0)
-        structured_llm = analysis_llm.with_structured_output(
+        structured_analysis_llm = build_analysis_llm().with_structured_output(
             GeoAnalysisOutput,
             method="json_schema",
             strict=True,
         )
 
-        analyses: dict[str, GeoAnalysisOutput | None] = {}
-        analysis_tasks = {
-            kw: _analyse_keyword(kw, raw_responses[kw], company_name, structured_llm)
-            for kw in ALL_BRAND_KEYWORDS
-            if raw_responses.get(kw)
-        }
-        analysis_results = await asyncio.gather(
-            *analysis_tasks.values(), return_exceptions=True
-        )
-        for keyword, result in zip(analysis_tasks.keys(), analysis_results):
-            if isinstance(result, Exception):
-                logger.warning("geo_analysis_failed", keyword=keyword, error=str(result))
-                analyses[keyword] = None
-            else:
-                analyses[keyword] = _apply_consistency_rules(result)
-
+        providers: list[GeoQueryProvider] = build_query_providers()
         logger.info(
-            "geo_analyses_done",
+            "geo_providers_active",
             company=company,
-            successful=sum(1 for v in analyses.values() if v is not None),
+            providers=[p.name for p in providers],
         )
 
-        # ------------------------------------------------------------------
-        # Phase 3 — Persist all rows (bulk insert)
-        # ------------------------------------------------------------------
-        rows = []
-        for keyword in ALL_BRAND_KEYWORDS:
-            analysis = analyses.get(keyword)
-            if analysis is None:
-                continue
-            rows.append(_build_sighting_row(keyword, analysis, company, run_at, _LLM_MODEL))
+        all_rows: list[GeoSightingRow] = []
+        # analyses from the last provider — used for synthesis input
+        last_analyses: dict[str, GeoAnalysisOutput | None] = {}
 
+        for provider in providers:
+            # --------------------------------------------------------------
+            # Phase 1 — GEO queries: ask this provider what companies lead
+            # each keyword
+            # --------------------------------------------------------------
+            raw_responses: dict[str, str] = {}
+            query_tasks = {
+                kw: _query_geo_keyword(kw, provider.llm)
+                for kw in ALL_BRAND_KEYWORDS
+            }
+            query_results = await asyncio.gather(
+                *query_tasks.values(), return_exceptions=True
+            )
+            for keyword, result in zip(query_tasks.keys(), query_results):
+                if isinstance(result, Exception):
+                    logger.warning(
+                        "geo_query_failed",
+                        provider=provider.name,
+                        keyword=keyword,
+                        error=str(result),
+                    )
+                    raw_responses[keyword] = ""
+                else:
+                    raw_responses[keyword] = result
+
+            logger.info(
+                "geo_queries_done",
+                company=company,
+                provider=provider.name,
+                total=len(ALL_BRAND_KEYWORDS),
+            )
+
+            # --------------------------------------------------------------
+            # Phase 2 — Structured analysis (always GPT-4o for consistency)
+            # --------------------------------------------------------------
+            analyses: dict[str, GeoAnalysisOutput | None] = {}
+            analysis_tasks = {
+                kw: _analyse_keyword(kw, raw_responses[kw], company_name, structured_analysis_llm)
+                for kw in ALL_BRAND_KEYWORDS
+                if raw_responses.get(kw)
+            }
+            analysis_results = await asyncio.gather(
+                *analysis_tasks.values(), return_exceptions=True
+            )
+            for keyword, result in zip(analysis_tasks.keys(), analysis_results):
+                if isinstance(result, Exception):
+                    logger.warning(
+                        "geo_analysis_failed",
+                        provider=provider.name,
+                        keyword=keyword,
+                        error=str(result),
+                    )
+                    analyses[keyword] = None
+                else:
+                    analyses[keyword] = _apply_consistency_rules(result)
+
+            logger.info(
+                "geo_analyses_done",
+                company=company,
+                provider=provider.name,
+                successful=sum(1 for v in analyses.values() if v is not None),
+            )
+
+            # Collect rows for this provider
+            for keyword in ALL_BRAND_KEYWORDS:
+                analysis = analyses.get(keyword)
+                if analysis is not None:
+                    all_rows.append(
+                        _build_sighting_row(keyword, analysis, company, run_at, provider.name)
+                    )
+
+            last_analyses = analyses
+
+        # ------------------------------------------------------------------
+        # Phase 3 — Persist all rows from all providers (bulk insert)
+        # ------------------------------------------------------------------
         try:
-            insert_geo_sightings(rows)
-            logger.info("geo_sightings_persisted", company=company, rows=len(rows))
+            insert_geo_sightings(all_rows)
+            logger.info("geo_sightings_persisted", company=company, rows=len(all_rows))
         except Exception as exc:
             logger.error("geo_persist_failed", company=company, error=str(exc))
             # Non-fatal: continue to synthesis
 
         # ------------------------------------------------------------------
-        # Phase 3.5 — Compute recommendation_rate before synthesis
-        # Done here while analyses are in memory — avoids re-querying sightings.
+        # Phase 3.5 — Compute recommendation_rate (averaged across providers)
         # ------------------------------------------------------------------
+        total_keywords_across_providers = len(ALL_BRAND_KEYWORDS) * len(providers)
         rec_count = sum(
-            1 for a in analyses.values()
-            if a is not None and a.recommendation_strength in ("recommended", "default")
+            1 for row in all_rows
+            if row.recommendation_strength in ("recommended", "organic")
         )
-        recommendation_rate = rec_count / len(ALL_BRAND_KEYWORDS) if ALL_BRAND_KEYWORDS else 0.0
+        recommendation_rate = rec_count / total_keywords_across_providers if total_keywords_across_providers else 0.0
 
         # ------------------------------------------------------------------
-        # Phase 4 — Synthesis (o4-mini over all results)
+        # Phase 4 — Synthesis (o4-mini over aggregated sightings)
+        # Uses last_analyses as representative input — synthesis is
+        # cross-provider and strategic, not per-provider.
         # ------------------------------------------------------------------
         sightings_for_synthesis = [
             {
@@ -267,15 +288,13 @@ async def geo_intelligence_node(state: BrandPipelineState) -> dict:
                 "use_case_context": a.use_case_context,
                 "counter_positioning": a.counter_positioning,
             }
-            for kw, a in analyses.items()
+            for kw, a in last_analyses.items()
             if a is not None
         ]
 
         synthesis: GeoSynthesisOutput | None = None
         try:
-            # o4-mini is a reasoning model — only supports default temperature (1)
-            synthesis_llm = _build_llm(_SYNTHESIS_MODEL, temperature=1.0)
-            structured_synthesis_llm = synthesis_llm.with_structured_output(
+            structured_synthesis_llm = build_synthesis_llm().with_structured_output(
                 GeoSynthesisOutput,
                 method="json_schema",
                 strict=True,
@@ -286,7 +305,6 @@ async def geo_intelligence_node(state: BrandPipelineState) -> dict:
             synthesis = await structured_synthesis_llm.ainvoke(messages)
             logger.info("geo_synthesis_done", company=company)
 
-            # Persist synthesis for time-series tracking
             try:
                 insert_geo_run(company, run_at, synthesis, recommendation_rate)
                 logger.info("geo_run_persisted", company=company)
@@ -297,11 +315,13 @@ async def geo_intelligence_node(state: BrandPipelineState) -> dict:
 
         # ------------------------------------------------------------------
         # Phase 5 — Return CapabilityResult
+        # mention_rate averaged across all providers and keywords
         # ------------------------------------------------------------------
-        mentions = [a for a in analyses.values() if a is not None and a.target_mentioned]
-        mention_rate = len(mentions) / len(ALL_BRAND_KEYWORDS) if ALL_BRAND_KEYWORDS else 0.0
+        total_possible = len(ALL_BRAND_KEYWORDS) * len(providers)
+        mention_count = sum(1 for row in all_rows if row.mentioned)
+        mention_rate = mention_count / total_possible if total_possible else 0.0
         gap_keywords = [
-            kw for kw, a in analyses.items()
+            kw for kw, a in last_analyses.items()
             if a is not None and not a.target_mentioned
         ]
 

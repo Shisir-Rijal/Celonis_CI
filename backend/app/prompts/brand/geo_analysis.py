@@ -132,7 +132,7 @@ class GeoAnalysisOutput(BaseModel):
     )
 
     recommendation_strength: Literal[
-        "listed", "attributed", "recommended", "default"
+        "listed", "attributed", "recommended", "organic"
     ] | None = Field(
         description=(
             "Based on exact_quote, how strongly is the target company recommended? "
@@ -142,8 +142,9 @@ class GeoAnalysisOutput(BaseModel):
             "recommended ('X is known for strong process mining capabilities'). "
             "'recommended': actively suggested for a specific situation "
             "('For supply chain analysis, X is a good choice'). "
-            "'default': presented as the obvious or first choice "
-            "('X is the go-to solution', or named first with clear primacy). "
+            "'organic': named as the first or go-to choice without being prompted "
+            "('X is the go-to solution', or named first with clear primacy — "
+            "strongest signal, unprompted top-of-mind mention). "
             "Return null if target_mentioned=false."
         )
     )
